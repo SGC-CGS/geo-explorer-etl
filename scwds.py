@@ -24,8 +24,7 @@ class serviceWds(object):
         self.wds_response_status_codes = {}
         self.get_code_sets()  # retrieved once only
 
-    def check_http_request_status(self, r)\
-            :
+    def check_http_request_status(self, r):
         # Verify http request status.
         # note some services will return 404 if there is no data available, this doesn't handle that yet.
         if r.status_code == requests.codes.ok:
