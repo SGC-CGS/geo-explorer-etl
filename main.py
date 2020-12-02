@@ -14,6 +14,7 @@ from zipfile import ZipFile
 WORK_DIR = str(pathlib.Path(__file__).parent.absolute())  # current script path
 
 # flags to turn some parts of code on/off (to ease debugging)
+download_and_unzip_product = False  # if product tables are already downloaded can set to false
 download_and_unzip_delta = False  # if delta files are already downloaded can set to false
 create_delta_subset_file = False  # if delta subset files have already been built can set to false
 use_test_delta_file = True  # if true, only the specified test file will be used for processing
@@ -64,9 +65,37 @@ if __name__ == "__main__":
                     with ZipFile(delta_file_path + ".zip", "r") as zipObj:
                         zipObj.extractall(delta_file_path)
 
-            # Download the table for each product - need this so we can match vectors to DGUIDs
+            # Download the table for each product - and create a new file w/ just the DGUID and vector
             #   TODO: Find out if there is a better way to do this - some geo info is available in
             #       the metadata, but could not find all info needed to build DGUID.
+            vector_file_list = {}
+            for pid in products_to_update:
+                print("Downloading full table for " + str(pid))
+                full_prod_file_path = WORK_DIR + "\\" + str(pid) + "-en"
+                file_ext = ".zip"
+                if download_and_unzip_product:
+                    full_prod_file = wds.get_full_table_download(pid, "en", full_prod_file_path + file_ext)
+                    if full_prod_file:
+                        print("Extracting " + full_prod_file_path)
+                        with ZipFile(full_prod_file_path + file_ext, "r") as zipObj:
+                            zipObj.extractall(full_prod_file_path)
+
+                # save to file with vector and DGUID only
+                dguid_rows = []
+                print("Building DGUID and vector list from full table")
+                for chunk in pd.read_csv(full_prod_file_path + "\\" + str(pid) + ".csv", chunksize=10000,
+                                         usecols=["DGUID", "VECTOR"]):
+                    dguid_rows.append(chunk)
+
+                vector_df = pd.concat(dguid_rows)  # add all DGUIDs/vectors to data frame
+                # remove 'v' character from vector id (so it can be matched to delta records)
+                vector_df["VECTOR"] = vector_df["VECTOR"].str.replace("v", "", case=False)
+                dguid_rows = None
+                vector_file = WORK_DIR + "\\vector_dguid_" + str(pid) + ".csv"
+                print("Creating DGUID file for " + str(len(vector_df.index)) + " vectors: " + vector_file)
+                vector_df.to_csv(vector_file, encoding='utf-8', index=False)  # exclude index column
+                vector_df = None
+                vector_file_list[pid] = vector_file
 
             # Search the delta file for each affected product and create subsetted delta files.
             #   Ran into memory issues trying to hold too much data in the list at once, so building data list for

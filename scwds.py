@@ -158,7 +158,7 @@ class serviceWds(object):
         # lang_code - language code "en" or "fr"
         # file_path - location to save the file
         url = self.wds_url + "getFullTableDownloadCSV/" + str(product_id) + "/" + lang_code
-        print("Retrieving CSV link from " + url + "...\n")
+        print("Retrieving CSV link from " + url + "...")
         r = requests.get(url)
         self.check_http_request_status(r)
 
