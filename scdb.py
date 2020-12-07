@@ -121,18 +121,25 @@ class sqlDb(object):
         else:
             return False
 
-    def vector_and_ref_period_match(self, vector_id, reference_period):
-        # find match for specified vector and reference period
-        vector_id = int(vector_id)
-        if len(str(reference_period)) == 4:  # if only year is given, set to Jan 1 for db
-            reference_period = datetime.date(reference_period, 1, 1)
-        reference_period = reference_period.strftime("%Y-%m-%d")
-
-        retval = False
-        query = "SELECT COUNT(*) FROM gis.Indicator WHERE ReferencePeriod = ? AND Vector = ?"
-        self.cursor.execute(query, reference_period, int(vector_id))
+    def vector_and_ref_period_match(self, product_id, vector_id, reference_period):
+        # find match for specified product, vector and reference period
+        # Note we first want to know if the vector matches, and THEN
+        #   if the reference period matches. This is done by getting
+        #   all reference periods for a vector and then searching the
+        #   result for the specified reference period.
+        # Return Values:
+        #   VectorFound --> only a matching vector was found
+        #   VectorRefPeriodFound --> matching vector and reference period were both found
+        #   NotFound --> no match was found
+        retval = "NotFound"
+        query = "SELECT ReferencePeriod FROM gis.Indicator WHERE IndicatorThemeId = ? AND Vector = ?"
+        self.cursor.execute(query, int(product_id), int(vector_id))
 
         results = self.cursor.fetchall()
-        if len(results) == 1:
-            retval = results[0][0]
+        if len(results) > 0:
+            retval = "VectorFound"
+            for res in results:
+                if res[0].strftime("%Y-%m-%d") == reference_period:
+                    retval = "VectorRefPeriodFound"
+
         return retval

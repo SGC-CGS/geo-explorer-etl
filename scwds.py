@@ -1,6 +1,5 @@
 # WDS class
 import requests
-from pprint import pprint
 
 
 class serviceWds(object):
@@ -158,7 +157,7 @@ class serviceWds(object):
         # lang_code - language code "en" or "fr"
         # file_path - location to save the file
         url = self.wds_url + "getFullTableDownloadCSV/" + str(product_id) + "/" + lang_code
-        print("Retrieving CSV link from " + url + "...")
+        print("Retrieving download link from " + url + "...")
         r = requests.get(url)
         self.check_http_request_status(r)
 
@@ -167,11 +166,11 @@ class serviceWds(object):
             resp = r.json()
 
             if resp["status"] != "SUCCESS":
-                print("CSV file link could not be retrieved. WDS returned: " + str(resp["status"])
+                print("Download link could not be retrieved. WDS returned: " + str(resp["status"])
                       + " for product " + str(product_id) + " " + lang_code)
             else:
-                print("Downloading CSV file from " + str(resp["object"]))
-                dl_r = requests.get(resp["object"])  # wds returns a link to the zip file
+                print("Downloading file from " + str(resp["object"]))
+                dl_r = requests.get(resp["object"])  # wds returns a link to the zip file, download it
                 self.check_http_request_status(dl_r)
                 if self.last_http_req_status:
                     print("Saving file as zip.")
@@ -184,13 +183,13 @@ class serviceWds(object):
                         print("File saved.")
                         retval = True
                 else:
-                    print("CSV file could not be downloaded.")
+                    print("The file could not be downloaded.")
         return retval
 
-    def get_members_from_dimension(self, dimension):
-        retval = False
-        if dimension["member"]:
-            retval = dimension["member"]
-            print("MEMBER")
-            pprint(retval)
-        return retval
+    # def get_members_from_dimension(self, dimension):
+    #     retval = False
+    #     if dimension["member"]:
+    #         retval = dimension["member"]
+    #         print("MEMBER")
+    #         pprint(retval)
+    #     return retval
