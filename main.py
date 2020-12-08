@@ -53,23 +53,33 @@ if __name__ == "__main__":
             # process for each product
             for pid in products_to_update:
 
-                # Download the table
-                print("Downloading full table for " + str(pid))
-                full_prod_path = WORK_DIR + "\\" + str(pid) + "-en"
-                file_ext = ".zip"
-                full_prod_file = wds.get_full_table_download(pid, "en", full_prod_path + file_ext) # download
-                if full_prod_file:
-                    if h.unzip_file(full_prod_path + file_ext, full_prod_path): # unzip
-                        # read the file
-                        prod_rows = []
-                        print("Reading full table")
-                        for chunk in pd.read_csv(full_prod_path + "\\" + str(pid) + ".csv", chunksize=10000):
-                            prod_rows.append(chunk)
+                # Download the tables
+                files_done = 0
+                prod_path = {"en": {}, "fr": {}}
+                for lg in prod_path.keys():
+                    prod_path[lg]["Folder"] = WORK_DIR + "\\" + str(pid) + "-" + lg
+                    prod_path[lg]["MetaDataFile"] = str(pid) + "_MetaData.csv"
+                    prod_path[lg]["DataFile"] = str(pid) + ".csv"
+                    file_ext = ".zip"
+                    if wds.get_full_table_download(pid, lg, prod_path[lg]["Folder"] + file_ext):  # download
+                        if h.unzip_file(prod_path[lg]["Folder"] + file_ext, prod_path[lg]["Folder"]):  # unzip
+                            files_done += 1
 
-                        prod_df = pd.concat(prod_rows)  # add all DGUIDs/vectors to data frame
-                        prod_rows = None
-                        print(prod_df.head())
-                        prod_df = None
+                if files_done == len(prod_path):
+
+                    # TODO - delete existing data, rebuild dataset from csv
+                    
+
+                    # read the file (en) # TODO: read fr file
+                    prod_rows = []
+                    print("Reading full table")
+                    for chunk in pd.read_csv(prod_path["en"]["Folder"] + "\\" + str(pid) + ".csv", chunksize=10000):
+                        prod_rows.append(chunk)
+
+                    prod_df = pd.concat(prod_rows)  # add all DGUIDs/vectors to data frame
+                    prod_rows = None
+                    print(prod_df.head())
+                    prod_df = None
 
     # delete the objects
     db = None
