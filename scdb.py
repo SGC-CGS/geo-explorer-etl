@@ -1,5 +1,4 @@
 # Database class
-import datetime
 import pyodbc
 
 
@@ -13,8 +12,21 @@ class sqlDb(object):
         conn_string = "Driver={" + self.driver + "};Server=" + self.server + \
                       ";Trusted_Connection=yes;Database=" + self.database + ";"
         print("Connecting to DB: " + conn_string)
-        self.connection = pyodbc.connect(conn_string)
+        self.connection = pyodbc.connect(conn_string, autocommit=False)
         self.cursor = self.connection.cursor()
+
+    def delete_product(self, product_id):
+        # Note: We are not deleting the data from Dimensions, DimensionValues, or IndicatorTheme
+        qry1 = "DELETE FROM gis.Indicator WHERE IndicatorThemeId = ?"
+        # self.cursor.execute(qry1, product_id)
+        print(qry1 + ": " + str(product_id))
+        return True
+
+        # statements must be executed in order
+        # self.cursor.execute("INSERT INTO T2 VALUES ...")
+        # self.cursor.execute("INSERT INTO T3 VALUES ...")
+        # self.cursor.rollback()
+        # self.cursor.commit()
 
     def execute_simple_select_query(self, query):
         # execute a simple select query (no criteria) and return all results
@@ -23,7 +35,8 @@ class sqlDb(object):
         return results
 
     def get_last_dimension_id(self):
-        # returns highest dimension id in db
+        # returns h
+        # ighest dimension id in db
         query = "SELECT MAX(DimensionId) FROM gis.Dimensions"
         results = self.execute_simple_select_query(query)
         retval = False
@@ -44,7 +57,7 @@ class sqlDb(object):
         # returns highest indicator id in db
         query = "SELECT MAX(IndicatorId) FROM gis.Indicator"
         results = self.execute_simple_select_query(query)
-        retval = False
+        retval = 0  # if it stays 0 the table is empty
         if len(results) == 1:
             retval = results[0][0]
         return retval
