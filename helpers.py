@@ -12,11 +12,44 @@ def daterange(date1, date2):
     return retval
 
 
+def concat_dimension_columns(dimensions, df, delimiter):
+    # concatenate data frame columns by dimension name
+    #   dimensions = list of dimensions
+    #   df = data frame containing columns with names that match dimension list
+    #   delimiter = text to insert between dimension values
+    # returns a column (pandas series) with all dimension values joined
+    retval = ""
+    first_col = True
+    for dimension in dimensions:
+        if first_col:
+            retval = df[dimension]
+            first_col = False
+        else:
+            retval += delimiter + df[dimension]
+    return retval
+
+
 def convert_ref_year_to_date(ref_per):
     # if only year is given, set to Jan 1 for db
     if len(str(ref_per)) == 4:
         ref_per = dt.date(ref_per, 1, 1)
     retval = ref_per.strftime("%Y-%m-%d")
+    return retval
+
+
+def fix_ref_year(year_str):
+    # handle abnormal year formats in reference periods
+    year_str = str(year_str)
+    ln = len(year_str)
+    if ln == 4:
+        retval = year_str
+    elif ln == 7:  # 2017/18
+        retval = year_str[:2] + year_str[-2:]
+    elif ln == 9:  # ex. 2017/2018
+        retval = year_str[-4:]
+    else:
+        print("Invalid Reference Year: " + year_str)
+        retval = 1900  # default - to help finding afterward
     return retval
 
 
