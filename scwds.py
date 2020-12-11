@@ -1,5 +1,47 @@
 # WDS class
+from datetime import datetime
 import requests
+
+
+def get_metadata_dimensions(metadata, ignore_geo):
+    # return list of dimensions from meta data
+    #   metadata - meta data formatted as it comes from from get_cube_metadata
+    #   ignore_geo - True=skip geography dimension
+    dim = {"enName": [], "frName": []}
+    if "dimension" in metadata:
+        for dimension in metadata["dimension"]:
+            en_name = dimension["dimensionNameEn"].upper()
+            if en_name != "GEOGRAPHY" or (not ignore_geo and en_name == "GEOGRAPHY"):
+                dim["enName"].append(dimension["dimensionNameEn"])
+                dim["frName"].append(dimension["dimensionNameFr"])
+    else:
+        print("Could not find any dimensions in the metadata.")
+    return dim
+
+
+def get_metadata_release_date(metadata):
+    # return release date from meta data
+    #   metadata - meta data formatted as it comes from from get_cube_metadata
+    retval = datetime.today().isoformat(timespec="minutes")  # ex. 2020-12-11T10:11
+    if "releaseTime" in metadata:
+        retval = metadata["releaseTime"]
+    else:
+        print("Could not release date/time in the metadata. Setting to current.")
+    return retval
+
+
+def write_file(filename, content, flags):
+    retval = False
+    try:
+        with open(filename, flags) as f:
+            f.write(content)
+    except IOError as e:
+        print("Failed saving to " + filename)
+        print("Error: File could not be written to disk. \n" + str(e))
+    else:
+        print("File saved to " + filename)
+        retval = True
+    return retval
 
 
 class serviceWds(object):
@@ -138,14 +180,7 @@ class serviceWds(object):
 
         retval = False
         if self.last_http_req_status:
-            try:
-                with open(file_path, "wb") as f:
-                    f.write(dl_d.content)  # save the file
-            except IOError as e:
-                print("Failed saving to " + file_path)
-                print("Error: File could not be written to disk. \n" + str(e))
-            else:
-                print("File saved to " + file_path)
+            if write_file(file_path, dl_d.content, "wb"):
                 retval = True
         else:
             print("Delta file could not be downloaded.")
@@ -173,14 +208,7 @@ class serviceWds(object):
                 dl_r = requests.get(resp["object"])  # wds returns a link to the zip file, download it
                 self.check_http_request_status(dl_r)
                 if self.last_http_req_status:
-                    print("Saving file as zip.")
-                    try:
-                        with open(file_path, "wb") as f:
-                            f.write(dl_r.content)  # save the file
-                    except IOError as e:
-                        print("Error: File could not be written to disk. \n" + str(e))
-                    else:
-                        print("File saved.")
+                    if write_file(file_path, dl_r.content, "wb"):
                         retval = True
                 else:
                     print("The file could not be downloaded.")
