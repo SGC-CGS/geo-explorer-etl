@@ -35,16 +35,16 @@ if __name__ == "__main__":
 
     # loop through specified date range
     for dt in h.daterange(start_date, end_date):
-        rel_date = dt.strftime("%Y-%m-%d")
+        process_date = dt.strftime("%Y-%m-%d")
 
         # find out which cubes have changed
-        print("\nLooking for changed cubes on: " + rel_date)
-        changed_cubes = wds.get_changed_cube_list(rel_date)
+        print("\nLooking for changed cubes on: " + process_date)
+        changed_cubes = wds.get_changed_cube_list(process_date)
 
         # check the database for matching tables
         products_to_update = db.get_matching_product_list(changed_cubes)
         if len(products_to_update) == 0:
-            print("There are no tables to update for " + rel_date)  # No tables = No further action
+            print("There are no tables to update for " + process_date)  # No tables = No further action
         else:
             print("Found " + str(len(products_to_update)) + " tables to update: " + str(products_to_update))
 
@@ -53,33 +53,107 @@ if __name__ == "__main__":
             # process for each product
             for pid in products_to_update:
 
-                # Download the tables
+                pid_str = str(pid)  # for moments when str is required
+
+                # Download the product tables
                 files_done = 0
                 prod_path = {"en": {}, "fr": {}}
                 for lg in prod_path.keys():
-                    prod_path[lg]["Folder"] = WORK_DIR + "\\" + str(pid) + "-" + lg
-                    prod_path[lg]["MetaDataFile"] = str(pid) + "_MetaData.csv"
-                    prod_path[lg]["DataFile"] = str(pid) + ".csv"
+                    prod_path[lg]["Folder"] = WORK_DIR + "\\" + pid_str + "-" + lg
+                    # prod_path[lg]["MetaDataFile"] = pid_str + "_MetaData.csv"
+                    prod_path[lg]["DataFile"] = pid_str + ".csv"
                     file_ext = ".zip"
-                    if wds.get_full_table_download(pid, lg, prod_path[lg]["Folder"] + file_ext):  # download
-                        if h.unzip_file(prod_path[lg]["Folder"] + file_ext, prod_path[lg]["Folder"]):  # unzip
-                            files_done += 1
+                    # if wds.get_full_table_download(pid, lg, prod_path[lg]["Folder"] + file_ext):  # download
+                    #     if h.unzip_file(prod_path[lg]["Folder"] + file_ext, prod_path[lg]["Folder"]):  # unzip
+                    #         files_done += 1
+
+                files_done = 2  # TODO - REMOVE
 
                 if files_done == len(prod_path):
 
+                    # Keep data in these tables (confirmed):
+                    #   Dimensions -- select box on CSGE
+                    #   Dimension Values - select box on CSGE
+                    #   IndicatorTheme --> product list
+
+                    # Delete data in these tables (in order):
+                    #   Indicator
+                    #   GeographicLevelForIndicator -- geo level the indicator is available at
+                    #   GeographyReferenceForIndicator -- link from indicator value to specific geography
+                    #   IndicatorMetaData -- more info about the indicator
+                    #   IndicatorValues -- actual values
+                    #   RelatedCharts  -- related data charta
+
                     # TODO - delete existing data, rebuild dataset from csv
-                    
+                    # delete product in database
+                    db.delete_product(pid)
+
+                    # Get the product metadata
+                    prod_metadata = wds.get_cube_metadata(pid)
+                    dimensions = scwds.get_metadata_dimensions(prod_metadata, True)
+                    release_date = scwds.get_metadata_release_date(prod_metadata)
 
                     # read the file (en) # TODO: read fr file
                     prod_rows = []
                     print("Reading full table")
-                    for chunk in pd.read_csv(prod_path["en"]["Folder"] + "\\" + str(pid) + ".csv", chunksize=10000):
+                    for chunk in pd.read_csv(prod_path["en"]["Folder"] + "\\" + pid_str + ".csv", chunksize=10000):
                         prod_rows.append(chunk)
 
-                    prod_df = pd.concat(prod_rows)  # add all DGUIDs/vectors to data frame
+                    df = pd.concat(prod_rows)  # add all DGUIDs/vectors to data frame
                     prod_rows = None
-                    print(prod_df.head())
-                    prod_df = None
+
+                    # TODO - move to separate functions by table
+                    # Add/remove columns as needed for various tables
+                    df["REF_DATE"] = df["REF_DATE"].astype(str)  # 3s
+                    # remove ".", correct vintage
+                    df["DGUID"] = df["DGUID"].str.replace(".", "").str.replace("201A", "2015A")  # 17s
+                    # strip 1st dimension
+                    df["TmpCoordinate"] = df["COORDINATE"].str.replace(r"^([^.]+\.)", "", regex=True)  # 11s
+                    df["RefYear"] = df["REF_DATE"].map(h.fix_ref_year).astype(str)  # need 4 digit year #9s
+                    # IndicatorCode ex. 13100778.1.23.1.2017/2018-01-01
+                    df["IndicatorCode"] = pid_str + "." + df["TmpCoordinate"] + "." + df["REF_DATE"] + "-01-01"  # 2s
+                    df["IndicatorThemeID"] = pid
+                    df["ReleaseIndicatorDate"] = release_date
+                    df.rename(columns={"VECTOR": "Vector", "UOM": "UOM_EN"}, inplace=True)
+                    df["ReferencePeriod"] = df["RefYear"] + "-01-01"  # becomes Jan 1 of reference year
+                    df["Vector"] = df["Vector"].str.replace("v", "")
+
+                    pd.set_option('display.max_columns', None)  # show all cols with head
+                    print(df.head())
+
+                    # create df for gis.indicator
+                    df_indicator = df[["IndicatorThemeID", "ReleaseIndicatorDate", "ReferencePeriod", "IndicatorCode",
+                                       "UOM_EN", "Vector", "RefYear"]]
+                    # remove any duplicates for IndicatorCode since we only need one descriptive row for each
+                    df_indicator = df_indicator.drop_duplicates(subset=["IndicatorCode"], inplace=False)  # 5350 rows
+
+                    # finish building the rest of the columns on the smaller dataset
+                    print("9 " + str(datetime.datetime.now()) + " " + str(len(df.index)))
+                    # Concatenate dimension columns
+                    # ex. Total, all property types _ 1960 or earlier _ Resident owners only _ Number
+                    df_indicator["IndicatorName_EN"] = h.concat_dimension_columns(dimensions["enName"], df, " _ ")  # 3s
+                    df_indicator["IndicatorDisplay_EN"] = "<ul><li>" + df_indicator["RefYear"] + "<li>" +  \
+                                                          df_indicator["IndicatorName_EN"].str.replace(" _ ", "<li>") \
+                                                          + "</li></ul>"
+                    # df_indicator["RefYear"].to_string() +
+                    # Drop any temporary columns that are no longer needed
+                    df_indicator.drop(["RefYear"], axis=1, inplace=True)
+
+                    print("10 " + str(datetime.datetime.now()) + " " + str(len(df.index)))
+
+                    print(df_indicator.head())
+
+                    # check data types before insert to DB
+
+                    # Setup Indicator ID
+                    cur_index = db.get_last_indicator_id() + 1
+
+                    # TODO: remove test code
+                    df_indicator.to_csv(WORK_DIR + "\\" + pid_str + "-testoutput-indicator.csv", encoding='utf-8',
+                                        index=False)  # TEST TODO
+
+                    df_indicator = None
+                    df = None
 
     # delete the objects
     db = None
