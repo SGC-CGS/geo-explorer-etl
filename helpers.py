@@ -1,6 +1,7 @@
 # helper functions
 
 import datetime as dt
+import pandas as pd
 import zipfile as zf
 
 
@@ -27,6 +28,17 @@ def concat_dimension_columns(dimensions, df, delimiter):
         else:
             retval += delimiter + df[dimension]
     return retval
+
+
+def convert_csv_to_df(csv_file_name):
+    # read specified csv in chunks
+    # return as pandas dataframe
+    prod_rows = []
+    print("Reading file to dataframe: " + csv_file_name)
+    for chunk in pd.read_csv(csv_file_name, chunksize=10000):
+        prod_rows.append(chunk)
+    csv_df = pd.concat(prod_rows)
+    return csv_df
 
 
 def convert_ref_year_to_date(ref_per):
