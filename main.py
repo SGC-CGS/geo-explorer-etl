@@ -128,7 +128,10 @@ if __name__ == "__main__":
                     df_indicator = df_indicator.drop_duplicates(subset=["IndicatorCode"], inplace=False)  # 5350 rows
 
                     # finish building the rest of the columns on the smaller dataset
-                    print("9 " + str(datetime.datetime.now()) + " " + str(len(df.index)))
+                    next_indicator_id = db.get_last_indicator_id() + 1  # set unique IDs
+                    df_indicator["IndicatorId"] = pd.RangeIndex(start=next_indicator_id,
+                                                                stop=(next_indicator_id+df_indicator.shape[0]))
+                    # print("9 " + str(datetime.datetime.now()) + " " + str(len(df.index)))
                     # Concatenate dimension columns
                     # ex. Total, all property types _ 1960 or earlier _ Resident owners only _ Number
                     df_indicator["IndicatorName_EN"] = h.concat_dimension_columns(dimensions["enName"], df, " _ ")  # 3s
