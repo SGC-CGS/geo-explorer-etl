@@ -5,6 +5,15 @@ import pandas as pd
 import zipfile as zf
 
 
+def build_indicator_code(coordinate, reference_date, pid_str):
+    # build a custom indicator code that strips geography from the coordinate
+    # and adds a reference date
+    # IndicatorCode ex. 13100778.1.23.1.2017/2018-01-01
+    temp_coordinate = coordinate.str.replace(r"^([^.]+\.)", "", regex=True)  # strips 1st dimension (geography)
+    indicator_code = pid_str + "." + temp_coordinate + "." + reference_date + "-01-01"
+    return indicator_code
+
+
 def daterange(date1, date2):
     # return range of dates between date1 and date2
     retval = []
@@ -30,12 +39,12 @@ def concat_dimension_columns(dimensions, df, delimiter):
     return retval
 
 
-def convert_csv_to_df(csv_file_name):
+def convert_csv_to_df(csv_file_name, delim):
     # read specified csv in chunks
     # return as pandas dataframe
     prod_rows = []
     print("Reading file to dataframe: " + csv_file_name)
-    for chunk in pd.read_csv(csv_file_name, chunksize=10000):
+    for chunk in pd.read_csv(csv_file_name, chunksize=10000, sep=delim):
         prod_rows.append(chunk)
     csv_df = pd.concat(prod_rows)
     return csv_df
