@@ -11,6 +11,7 @@ import time
 
 # set up
 WORK_DIR = str(pathlib.Path(__file__).parent.absolute())  # current script path
+langs = ["en", "fr"]
 
 # TEST DATE: Oct 28, 2020 has 3 tables from db with updates (46100027, 46100053, 46100054)
 # delta file for Oct 28, 2020: 196 MB zipped, 2.5 GB unzipped - 32,538,310 rows.
@@ -57,19 +58,19 @@ if __name__ == "__main__":
 
                 # Download the product tables
                 files_done = 0
-                prod_path = {"en": {}, "fr": {}}
-                for lg in prod_path.keys():
-                    prod_path[lg]["Folder"] = WORK_DIR + "\\" + pid_str + "-" + lg
-                    # prod_path[lg]["MetaDataFile"] = pid_str + "_MetaData.csv"
-                    prod_path[lg]["DataFile"] = pid_str + ".csv"
+                pid_path = {"en": {}, "fr": {}}
+                for lg in pid_path.keys():
+                    pid_path[lg]["Folder"] = WORK_DIR + "\\" + pid_str + "-" + lg
+                    # pid_path[lg]["MetaDataFile"] = pid_str + "_MetaData.csv"
+                    pid_path[lg]["DataFile"] = pid_str + ".csv"
                     file_ext = ".zip"
-                    # if wds.get_full_table_download(pid, lg, prod_path[lg]["Folder"] + file_ext):  # download
-                    #     if h.unzip_file(prod_path[lg]["Folder"] + file_ext, prod_path[lg]["Folder"]):  # unzip
+                    # if wds.get_full_table_download(pid, lg, pid_path[lg]["Folder"] + file_ext):  # download
+                    #     if h.unzip_file(pid_path[lg]["Folder"] + file_ext, pid_path[lg]["Folder"]):  # unzip
                     #         files_done += 1
 
                 files_done = 2  # TODO - REMOVE
 
-                if files_done == len(prod_path):
+                if files_done == len(pid_path):
                     # Keep data in these tables (confirmed):
                     #   Dimensions -- select box on CSGE
                     #   Dimension Values - select box on CSGE
@@ -83,92 +84,93 @@ if __name__ == "__main__":
                     #   IndicatorValues -- actual values
                     #   RelatedCharts  -- related data charta
 
-                    # TODO - delete existing data, rebuild dataset from csv
                     # delete product in database
-                    db.delete_product(pid)
+                    if db.delete_product(pid):
 
-                    # Get the product metadata
-                    prod_metadata = wds.get_cube_metadata(pid)
-                    dimensions = scwds.get_metadata_dimensions(prod_metadata, True)
-                    release_date = scwds.get_metadata_release_date(prod_metadata)
+                        # Get the product metadata
+                        prod_metadata = wds.get_cube_metadata(pid)
+                        dimensions = scwds.get_metadata_dimensions(prod_metadata, True)
+                        release_date = scwds.get_metadata_release_date(prod_metadata)
 
-                    # read the file (en) # TODO: read fr file
-                    df_en = h.convert_csv_to_df(prod_path["en"]["Folder"] + "\\" + pid_str + ".csv", ",")
-                    df_fr = h.convert_csv_to_df(prod_path["fr"]["Folder"] + "\\" + pid_str + ".csv", ";")
+                        # build dict of columns and types
+                        cols = h.build_column_and_type_dict(dimensions, langs)
 
-                    df_en["REF_DATE"] = df_en["REF_DATE"].astype(str)
-                    df_fr["PÉRIODE DE RÉFÉRENCE"] = df_fr["PÉRIODE DE RÉFÉRENCE"].astype(str)
+                        # process french dataset first so we can reduce the mem footprint quickly
+                        df_fr = h.convert_csv_to_df(pid_path["fr"]["Folder"] + "\\" + pid_str + ".csv", ";", cols["fr"])
+                        df_fr["IndicatorCode"] = h.build_indicator_code(df_fr["COORDONNÉES"],
+                                                                        df_fr["PÉRIODE DE RÉFÉRENCE"],
+                                                                        pid_str)
+                        df_fr.drop(["COORDONNÉES"], axis=1, inplace=True)
+                        df_fr.drop_duplicates(subset=["IndicatorCode"], inplace=True)  # 5350
 
-                    # Build Indicator Code
-                    df_en["IndicatorCode"] = h.build_indicator_code(df_en["COORDINATE"], df_en["REF_DATE"], pid_str)
-                    df_fr["IndicatorCode"] = h.build_indicator_code(df_fr["COORDONNÉES"], df_fr["PÉRIODE DE RÉFÉRENCE"],
-                                                                    pid_str)
+                        # load english dataset (largest)
+                        df_en = h.convert_csv_to_df(pid_path["en"]["Folder"] + "\\" + pid_str + ".csv", ",", cols["en"])
+                        df_en["IndicatorCode"] = h.build_indicator_code(df_en["COORDINATE"], df_en["REF_DATE"], pid_str)
+                        df_en.drop(["COORDINATE"], axis=1, inplace=True)
 
-                    # drop columns that are not needed
-                    df_en.drop(["GEO", "COORDINATE", "UOM_ID", "SCALAR_FACTOR", "SCALAR_ID"], axis=1, inplace=True)
-                    df_fr.drop(["GÉO", "DGUID", "VECTEUR", "COORDONNÉES", "IDENTIFICATEUR D'UNITÉ DE MESURE",
-                                "FACTEUR SCALAIRE", "IDENTIFICATEUR SCALAIRE", "VALEUR", "TERMINÉ", "DÉCIMALES",
-                                "STATUS", "SYMBOLE"],
-                               axis=1, inplace=True)
+                        # rename columns to match db
+                        df_en.rename(columns={"VECTOR": "Vector", "UOM": "UOM_EN"}, inplace=True)
+                        df_fr.rename(columns={"UNITÉ DE MESURE": "UOM_FR"}, inplace=True)
 
-                    # TODO - move to separate functions by table
+                        # print(h.mem_usage(df_en))
+                        # df_en 3384 --> 2464 --> set dims to cts --> 2140
+                        # df_fr 2719 --> 2447
 
-                    # preliminary data preparation
-                    # remove ".", correct vintage
-                    df_en["DGUID"] = df_en["DGUID"].str.replace(".", "").str.replace("201A", "2015A")  # 17s
-                    df_en["RefYear"] = df_en["REF_DATE"].map(h.fix_ref_year).astype(str)  # need 4 digit year #9s
+                        # preliminary data preparation
+                        df_en["DGUID"] = df_en["DGUID"].str.replace(".", "").str.replace("201A", "2015A")  # fix vintage
+                        df_en["RefYear"] = df_en["REF_DATE"].map(h.fix_ref_year).astype(str)  # need 4 digit year
+                        df_en["IndicatorThemeID"] = pid
+                        df_en["ReleaseIndicatorDate"] = release_date
+                        df_en["ReferencePeriod"] = df_en["RefYear"] + "-01-01"  # becomes Jan 1 of reference year
+                        df_en["Vector"] = df_en["Vector"].str.replace("v", "")  # remove alpha char from vector
 
-                    df_en["IndicatorThemeID"] = pid
-                    df_en["ReleaseIndicatorDate"] = release_date
-                    df_en.rename(columns={"VECTOR": "Vector", "UOM": "UOM_EN"}, inplace=True)
-                    df_en["ReferencePeriod"] = df_en["RefYear"] + "-01-01"  # becomes Jan 1 of reference year
-                    df_en["Vector"] = df_en["Vector"].str.replace("v", "")
+                        # create df for gis.indicator
+                        print("Building Indicator Table...")
+                        # remove any duplicates for IndicatorCode since we only need one descriptive row for each
+                        df_en_ind = df_en.drop_duplicates(subset=["IndicatorCode"], inplace=False)  # 5350
+                        df_ind = pd.merge(df_en_ind, df_fr, on="IndicatorCode")
+                        df_en_ind = None
+                        df_fr = None
 
-                    # create df for gis.indicator
-                    print("Building Indicator Table...")
-                    # remove any duplicates for IndicatorCode since we only need one descriptive row for each
-                    df_en_indicator = df_en.copy()
-                    df_en_indicator = df_en_indicator.drop_duplicates(subset=["IndicatorCode"], inplace=False)  # 5350
-                    df_fr_indicator = df_fr.copy()
-                    df_fr_indicator = df_fr_indicator.drop_duplicates(subset=["IndicatorCode"], inplace=False)  # 5350
-                    df_indicator = pd.merge(df_en_indicator, df_fr_indicator, on="IndicatorCode")
+                        # build remaining indicator columns
+                        next_ind_id = db.get_last_indicator_id() + 1  # set unique IDs
+                        df_ind["IndicatorId"] = pd.RangeIndex(start=next_ind_id, stop=(next_ind_id + df_ind.shape[0]))
 
-                    # build remaining indicator columns
-                    next_indicator_id = db.get_last_indicator_id() + 1  # set unique IDs
-                    df_indicator["IndicatorId"] = pd.RangeIndex(start=next_indicator_id,
-                                                                stop=(next_indicator_id + df_indicator.shape[0]))
-                    # Concatenate dimension columns
-                    # ex. Total, all property types _ 1960 or earlier _ Resident owners only _ Number
-                    df_indicator["IndicatorName_EN"] = h.concat_dimension_columns(dimensions["enName"], df_indicator,
-                                                                                  " _ ")  # 3s
-                    df_indicator["IndicatorDisplay_EN"] = "<ul><li>" + df_indicator["RefYear"] + "<li>" + \
-                                                          df_indicator["IndicatorName_EN"].str.replace(" _ ", "<li>") \
-                                                          + "</li></ul>"
-                    df_indicator["IndicatorNameLong_EN"] = df_indicator["IndicatorName_EN"]  # field is a copy
+                        for lang in langs:
+                            for dim in dimensions[lang]:  # convert dimensions to string for concatenation
+                                df_ind[dim] = df_ind[dim].astype("string")
 
-                    df_indicator["IndicatorName_FR"] = h.concat_dimension_columns(dimensions["frName"], df_indicator,
-                                                                                  " _ ")  # 3s
-                    df_indicator["IndicatorDisplay_FR"] = "<ul><li>" + df_indicator["RefYear"] + "<li>" + \
-                                                          df_indicator["IndicatorName_FR"].str.replace(" _ ", "<li>") \
-                                                          + "</li></ul>"
-                    df_indicator["UOM_FR"] = df_indicator["UNITÉ DE MESURE"]
-                    df_indicator["IndicatorNameLong_FR"] = df_indicator["IndicatorName_FR"]  # field is a copy
+                        # Concatenate dimension columns
+                        # ex. Total, all property types _ 1960 or earlier _ Resident owners only _ Number
+                        df_ind["IndicatorName_EN"] = h.concat_dimension_cols(dimensions["en"], df_ind, " _ ")
+                        df_ind["IndicatorDisplay_EN"] = h.build_dimension_ul(df_ind["RefYear"],
+                                                                             df_ind["IndicatorName_EN"])
+                        # df_ind["IndicatorNameLong_EN"] = df_ind["IndicatorName_EN"]  # copy - save for db update
 
-                    # Keep only the columns needed for insert
-                    df_indicator = df_indicator.loc[:, ["IndicatorId", "IndicatorName_EN", "IndicatorName_FR",
-                                                        "IndicatorThemeID", "ReleaseIndicatorDate", "ReferencePeriod",
-                                                        "IndicatorCode", "IndicatorDisplay_EN", "IndicatorDisplay_FR",
-                                                        "UOM_EN", "UOM_FR", "Vector", "IndicatorNameLong_EN",
-                                                        "IndicatorNameLong_FR"]]
+                        df_ind["IndicatorName_FR"] = h.concat_dimension_cols(dimensions["fr"], df_ind, " _ ")
+                        df_ind["IndicatorDisplay_FR"] = h.build_dimension_ul(df_ind["RefYear"],
+                                                                             df_ind["IndicatorName_FR"])
+                        # df_ind["IndicatorNameLong_FR"] = df_ind["IndicatorName_FR"]  # copy - save for db update
 
-                    # TODO: check data types before insert to DB
+                        # Keep only the columns needed for insert
+                        df_ind = df_ind.loc[:, ["IndicatorId", "IndicatorName_EN", "IndicatorName_FR",
+                                                "IndicatorThemeID", "ReleaseIndicatorDate", "ReferencePeriod",
+                                                "IndicatorCode", "IndicatorDisplay_EN", "IndicatorDisplay_FR", "UOM_EN",
+                                                "UOM_FR", "Vector"]]
+                        #   ,
+                        # "IndicatorNameLong_EN", "IndicatorNameLong_FR"]]
 
-                    # TODO: remove test code
-                    df_indicator.to_csv(WORK_DIR + "\\" + pid_str + "-testoutput-indicator.csv", encoding='utf-8',
-                                        index=False)  # TEST TODO
+                        # TODO: check data types before insert to DB
 
-                    df_indicator = None
-                    df = None
+                        # TODO: INSERT TO DB
+                        # db.insert_indicator(df_ind)
+
+                        # TODO: remove test code
+                        df_ind.to_csv(WORK_DIR + "\\" + pid_str + "-testoutput-indicator.csv", encoding='utf-8',
+                                      index=False)
+
+                        df_ind = None
+                        df_en = None
 
     # delete the objects
     db = None
