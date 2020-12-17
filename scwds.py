@@ -7,13 +7,13 @@ def get_metadata_dimensions(metadata, ignore_geo):
     # return list of dimensions from meta data
     #   metadata - meta data formatted as it comes from from get_cube_metadata
     #   ignore_geo - True=skip geography dimension
-    dim = {"enName": [], "frName": []}
+    dim = {"en": [], "fr": []}
     if "dimension" in metadata:
         for dimension in metadata["dimension"]:
             en_name = dimension["dimensionNameEn"].upper()
             if en_name != "GEOGRAPHY" or (not ignore_geo and en_name == "GEOGRAPHY"):
-                dim["enName"].append(dimension["dimensionNameEn"])
-                dim["frName"].append(dimension["dimensionNameFr"])
+                dim["en"].append(dimension["dimensionNameEn"])
+                dim["fr"].append(dimension["dimensionNameFr"])
     else:
         print("Could not find any dimensions in the metadata.")
     return dim
