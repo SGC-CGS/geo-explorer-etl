@@ -16,38 +16,17 @@ class sqlDb(object):
         self.cursor = self.connection.cursor()
 
     def delete_product(self, product_id):
-        # Delete queries are in order as described in confluence document for deleting a product
         # Note: We are not deleting the data from Dimensions, DimensionValues, or IndicatorTheme
-        retval = False
-        pid = str(product_id)
-        print("\nDeleting product " + pid + " from database...")
-        print("Note: Data will NOT be deleted from Dimensions, DimensionValues, or IndicatorTheme.")
-        pid_subqry = "SELECT IndicatorId FROM gis.Indicator WHERE IndicatorThemeId = ? "
-        qry1 = "DELETE FROM gis.RelatedCharts WHERE RelatedChartId IN (" + pid_subqry + ") "
-        qry2 = "DELETE FROM gis.IndicatorMetaData WHERE IndicatorId IN (" + pid_subqry + ") "
-        qry3 = "DELETE FROM gis.IndicatorValues WHERE IndicatorValueId IN (" \
-                "SELECT IndicatorValueId FROM gis.GeographyReferenceForIndicator WHERE IndicatorId IN " \
-                "(" + pid_subqry + "))"
-        qry4 = "DELETE FROM gis.GeographyReferenceForIndicator WHERE IndicatorId in (" + pid_subqry + ") "
-        qry5 = "DELETE FROM gis.GeographicLevelForIndicator WHERE IndicatorId in (" + pid_subqry + ") "
-        qry6 = "DELETE FROM gis.Indicator WHERE IndicatorThemeId = ?"
+        qry1 = "DELETE FROM gis.Indicator WHERE IndicatorThemeId = ?"
+        # self.cursor.execute(qry1, product_id)
+        print(qry1 + ": " + str(product_id))
+        return True
 
-        try:
-            self.cursor.execute(qry1, pid)
-            self.cursor.execute(qry2, pid)
-            self.cursor.execute(qry3, pid)
-            self.cursor.execute(qry4, pid)
-            self.cursor.execute(qry5, pid)
-            self.cursor.execute(qry6, pid)
-        except pyodbc.Error as err:
-            self.cursor.rollback()
-            print("Could not delete product from database. See detailed mssage below:")
-            print(str(err))
-        else:
-            self.cursor.commit()
-            retval = True
-            print("Successfully deleted product.")
-        return retval
+        # statements must be executed in order
+        # self.cursor.execute("INSERT INTO T2 VALUES ...")
+        # self.cursor.execute("INSERT INTO T3 VALUES ...")
+        # self.cursor.rollback()
+        # self.cursor.commit()
 
     def execute_simple_select_query(self, query):
         # execute a simple select query (no criteria) and return all results
