@@ -26,8 +26,8 @@ class sqlDb(object):
         qry1 = "DELETE FROM gis.RelatedCharts WHERE RelatedChartId IN (" + pid_subqry + ") "
         qry2 = "DELETE FROM gis.IndicatorMetaData WHERE IndicatorId IN (" + pid_subqry + ") "
         qry3 = "DELETE FROM gis.IndicatorValues WHERE IndicatorValueId IN (" \
-                "SELECT IndicatorValueId FROM gis.GeographyReferenceForIndicator WHERE IndicatorId IN " \
-                "(" + pid_subqry + "))"
+               "SELECT IndicatorValueId FROM gis.GeographyReferenceForIndicator WHERE IndicatorId IN " \
+               "(" + pid_subqry + "))"
         qry4 = "DELETE FROM gis.GeographyReferenceForIndicator WHERE IndicatorId in (" + pid_subqry + ") "
         qry5 = "DELETE FROM gis.GeographicLevelForIndicator WHERE IndicatorId in (" + pid_subqry + ") "
         qry6 = "DELETE FROM gis.Indicator WHERE IndicatorThemeId = ?"
@@ -105,12 +105,6 @@ class sqlDb(object):
                 retval.append(prod[0])
         return retval
 
-    def update_dimension(self):  # TEST FUNCTION
-        # update dimension data
-        query = "UPDATE gis.Dimensions SET Dimension_EN = ? WHERE DimensionId = ?"
-        self.cursor.execute(query, 'Date', 6)
-        self.connection.commit()
-
     def insert_dimension(self, dim_rows):  # TEST FUNCTION
         # insert dimension data
         # find last identity column
@@ -133,6 +127,33 @@ class sqlDb(object):
         else:
             return False
 
+    def insert_indicator(self, df):
+        # insert rows to db from dataframe df
+        # returns number of rows inserted
+        print("Inserting to gis.Indicator... ")
+        inserted = 0
+
+        self.cursor.fast_executemany = True
+        for row_count in range(0, df.shape[0]):
+            chunk = df.iloc[row_count:row_count + 1, :].values.tolist()
+            tuple_of_tuples = tuple(tuple(x) for x in chunk)  # tuple required for pyodbc fast insert
+            try:
+                self.cursor.executemany("insert into gis.Indicator (IndicatorId, IndicatorName_EN, IndicatorName_FR, "
+                                        "IndicatorThemeID, ReleaseIndicatorDate, ReferencePeriod, IndicatorCode, "
+                                        "IndicatorDisplay_EN, IndicatorDisplay_FR, UOM_EN, UOM_FR, Vector, "
+                                        "IndicatorNameLong_EN, IndicatorNameLong_FR) "
+                                        "values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", tuple_of_tuples)
+
+            except pyodbc.Error as err:
+                self.cursor.rollback()
+                print("Could not add product to database. See detailed mssage below:")
+                print(str(err))
+            else:
+                self.cursor.commit()
+                inserted += 1
+        print("Inserted " + str(inserted) + " records.")
+        return inserted
+
     def insert_dimension_values(self, dim_rows):  # TEST FUNCTION
         # insert dimension values data
         # find last identity column
@@ -154,6 +175,12 @@ class sqlDb(object):
             return True
         else:
             return False
+
+    def update_dimension(self):  # TEST FUNCTION
+        # update dimension data
+        query = "UPDATE gis.Dimensions SET Dimension_EN = ? WHERE DimensionId = ?"
+        self.cursor.execute(query, 'Date', 6)
+        self.connection.commit()
 
     def vector_and_ref_period_match(self, product_id, vector_id, reference_period):
         # find match for specified product, vector and reference period
