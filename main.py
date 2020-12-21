@@ -49,7 +49,7 @@ if __name__ == "__main__":
         else:
             print("Found " + str(len(products_to_update)) + " tables to update: " + str(products_to_update))
 
-            products_to_update = [46100027]  # TODO - remove test code
+            products_to_update = [46100027]  # TODO - REMOVE TEST CODE TO RUN ALL PRODUCTS
 
             # process for each product
             for pid in products_to_update:
@@ -62,11 +62,12 @@ if __name__ == "__main__":
                 for lg in pid_path.keys():
                     pid_path[lg]["Folder"] = WORK_DIR + "\\" + pid_str + "-" + lg
                     pid_path[lg]["CSVFile"] = pid_path[lg]["Folder"] + "\\" + pid_str + ".csv"
+                    # TODO - uncomment the code below to download and unzip files (commented out to save time testing)
                     # if wds.get_full_table_download(pid, lg, pid_path[lg]["Folder"] + ".zip"):  # download
                     #     if h.unzip_file(pid_path[lg]["Folder"] + ".zip", pid_path[lg]["Folder"]):  # unzip
-                    #         files_done += 1
+                    #         files_downloaded += 1
 
-                files_downloaded = 2  # TODO - REMOVE
+                files_downloaded = 2  # TODO - REMOVE TEST CODE
 
                 if files_downloaded == len(pid_path):
 
