@@ -14,14 +14,9 @@ import time
 WORK_DIR = str(pathlib.Path(__file__).parent.absolute())  # current script path
 
 # TEST DATE: Oct 28, 2020 has 3 tables from db with updates (46100027, 46100053, 46100054)
-# delta file for Oct 28, 2020: 196 MB zipped, 2.5 GB unzipped - 32,538,310 rows.
-# CSGE product changes in delta file:
 #   46100027 - 4,513,250 rows
 #   46100053 - 13,869,198 rows
 #   46100054 - 13,869,198 rows
-# Other product changes in delta file (with row counts):
-#   33100036 (72), 10100139 (108), 13100784 (4536), 18100212 (16), 23100287 (3), 13100785 (2,964),
-#   13100768 (7,365), 13100783 (44,828), 33100270 (223,244), 23100216 (3,528)
 start_date = datetime.date(2020, 10, 27)  # y m d
 end_date = datetime.date(2020, 10, 28)
 
