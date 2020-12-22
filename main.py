@@ -44,7 +44,7 @@ if __name__ == "__main__":
         else:
             print("Found " + str(len(products_to_update)) + " tables to update: " + str(products_to_update))
 
-            products_to_update = [46100027]  # TODO - REMOVE TEST CODE TO RUN ALL PRODUCTS
+            products_to_update = [46100053]  # TODO - REMOVE TEST CODE TO RUN ALL PRODUCTS
 
             # process for each product
             for pid in products_to_update:
@@ -80,22 +80,26 @@ if __name__ == "__main__":
                         df_en = dfh.load_and_prep_prod_df(pid_path["en"]["CSVFile"], dimensions, "en", ",", pid_str,
                                                           release_date)
 
-                        # start the indicator data frame, then drop french df to save memory
+                        # start the Indicator data frame, then drop french df to save memory
                         df_ind = dfh.start_indicator_df(df_en, df_fr)
                         del df_fr
 
-                        # build remaining indicator columns
+                        # build remaining Indicator columns
                         next_ind_id = db.get_last_indicator_id() + 1  # set unique IDs
                         df_ind = dfh.finish_indicator_df(df_ind, dimensions, next_ind_id)
 
-                        # INSERT TO DB
+                        # Insert to gis.Indicator and delete dataframe
                         db.insert_indicator(df_ind)
-
-                        # TODO: remove test code
-                        df_ind.to_csv(WORK_DIR + "\\" + pid_str + "-testoutput-indicator.csv", encoding='utf-8',
-                                      index=False)
-
                         del df_ind
+
+                        # Prepare GeographicLevelforIndicator data frame
+                        df_newIndicators = db.get_pid_indicators_as_df(pid)  # get the new IndicatorIds from db
+                        df_gli = dfh.build_geographic_level_for_indicator_df(df_en, df_newIndicators)
+
+                        # Insert to gis.GeographyLevelForIndicator and delete dataframe
+                        db.insert_geography_level_for_indicator(df_gli)
+                        del df_gli
+
                         del df_en
 
     # delete the objects
