@@ -29,6 +29,36 @@ def build_dimension_ul(ref_year, indicator_name):
     return dim_ul
 
 
+def build_geographic_level_for_indicator_df(edf, idf):
+    # build the data frame for GeographicLevelForIndicator
+    # based on dataframe of english csv file (edf) and dataframe of Indicator
+    # codes and Ids that were just inserted to the db.
+    print("Building GeohraphicLevelForIndicator table.")
+    df_gli = edf.loc[:, ["DGUID", "IndicatorCode"]]  # subset of full en dataset
+    df_gli["DGUID"] = df_gli["DGUID"].str[4:9]  # extract geo level id from DGUID
+    df_gli.rename(columns={"DGUID": "GeographicLevelId"}, inplace=True)  # rename to match db
+    pattern = "|".join(["S0504", "S0505", "S0506"])  # S0504(CA),S0505(CMAP),S0506(CAP)-->S0503(CMA)
+    df_gli["GeographicLevelId"] = df_gli["GeographicLevelId"].str.replace(pattern, "S0503")
+    df_gli.drop_duplicates(inplace=True)  # remove dupe rows
+    df_gli.dropna(inplace=True)  # remove any row w/ empty value
+
+    df_gli = pd.merge(df_gli, idf, on="IndicatorCode", how="left")  # join datasets
+    df_gli.drop(["IndicatorCode"], axis=1, inplace=True)  # no longer need col
+
+    # Ensure columns are in order needed for insert
+    df_gli = df_gli.loc[:, ["IndicatorId", "GeographicLevelId"]]
+
+    # TODO: NOTE - Production database shows that a GeographicLevelId of "SSSS" is added to
+    #  gis.GeographicLevelForIndicator for every IndicatorId. These rows are apparently used for
+    #  the select drop down box on the web site. This part of the process is not in the PowerBI or
+    #  SSIS packages that were supplied. Need to confirm when these rows are added (i.e., is it
+    #  added manually with SQL statements after the PowerBI and SSIS packages are run?) and whether
+    #  this modification should be included here.
+
+    print("Finished building GeohraphicLevelForIndicator table.")
+    return df_gli
+
+
 def build_indicator_code(coordinate, reference_date, pid_str):
     # build a custom indicator code that strips geography from the coordinate
     # and adds a reference date
@@ -62,7 +92,7 @@ def convert_csv_to_df(csv_file_name, delim, cols):
     # cols = dict of columns and data types colname:coltype
     # return as pandas dataframe
     prod_rows = []
-    print("Reading file to dataframe: " + csv_file_name)
+    print("Reading file to dataframe: " + csv_file_name + "\n")
 
     for chunk in pd.read_csv(csv_file_name, chunksize=10000, sep=delim, usecols=list(cols.keys()), dtype=cols):
         prod_rows.append(chunk)
@@ -101,7 +131,7 @@ def finish_indicator_df(df, dims, next_id):
                     "IndicatorDisplay_FR", "UOM_EN", "UOM_FR", "Vector", "IndicatorNameLong_EN",
                     "IndicatorNameLong_FR"]]
 
-    print("Finished building indicator table.")
+    print("Finished building Indicator table.")
     return df
 
 
