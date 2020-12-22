@@ -1,4 +1,5 @@
 # Database class
+import pandas as pd
 import pyodbc
 
 
@@ -105,32 +106,35 @@ class sqlDb(object):
                 retval.append(prod[0])
         return retval
 
-    def insert_dimension(self, dim_rows):  # TEST FUNCTION
-        # insert dimension data
-        # find last identity column
-        cur_dim_id = self.get_last_dimension_id()
+    def get_pid_indicators_as_df(self, product_id):
+        # get the indicators for the specified product_id
+        # returns a pandas dataframe
+        query = "SELECT IndicatorId, IndicatorCode FROM gis.Indicator WHERE IndicatorThemeId = ?"
+        results = pd.read_sql(query, self.connection, params=[product_id])
+        return results
 
-        if cur_dim_id:
-            # increment dim id for each insert
-            for dim_row in dim_rows:
-                cur_dim_id += 1
-                dim_row[0] = cur_dim_id  # updates id for each row
-                print("Inserting: " + str(dim_row))
-
-            # do the insert
-            query = "INSERT INTO gis.Dimensions(DimensionId, IndicatorThemeId, Dimension_EN, Dimension_FR, " \
-                    "DisplayOrder, DimensionType) " \
-                    "VALUES(?, ?, ?, ?, ?, ?)"
-            self.cursor.executemany(query, dim_rows)
-            self.connection.commit()
-            return True
-        else:
-            return False
+    def insert_geography_level_for_indicator(self, df):
+        # insert rows to db from dataframe df
+        # returns number of rows inserted
+        print("Inserting to gis.GeographyLevelForIndicator... ")
+        qry = "INSERT INTO gis.GeographicLevelForIndicator (IndicatorId, GeographicLevelId) values (?,?)"
+        inserted = self.insert_dataframe_rows(qry, df)
+        return inserted
 
     def insert_indicator(self, df):
         # insert rows to db from dataframe df
         # returns number of rows inserted
         print("Inserting to gis.Indicator... ")
+        qry = "INSERT INTO gis.Indicator (IndicatorId, IndicatorName_EN, IndicatorName_FR, IndicatorThemeID, " \
+              "ReleaseIndicatorDate, ReferencePeriod, IndicatorCode, IndicatorDisplay_EN, IndicatorDisplay_FR, " \
+              "UOM_EN, UOM_FR, Vector, IndicatorNameLong_EN, IndicatorNameLong_FR) values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+        inserted = self.insert_dataframe_rows(qry, df)
+        return inserted
+
+    def insert_dataframe_rows(self, qry, df):
+        # insert an entire dataframe (df) to the database
+        # based on specified query (qry)
+        # returns number of rows inserted (inserted)
         inserted = 0
 
         self.cursor.fast_executemany = True
@@ -138,11 +142,7 @@ class sqlDb(object):
             chunk = df.iloc[row_count:row_count + 1, :].values.tolist()
             tuple_of_tuples = tuple(tuple(x) for x in chunk)  # tuple required for pyodbc fast insert
             try:
-                self.cursor.executemany("insert into gis.Indicator (IndicatorId, IndicatorName_EN, IndicatorName_FR, "
-                                        "IndicatorThemeID, ReleaseIndicatorDate, ReferencePeriod, IndicatorCode, "
-                                        "IndicatorDisplay_EN, IndicatorDisplay_FR, UOM_EN, UOM_FR, Vector, "
-                                        "IndicatorNameLong_EN, IndicatorNameLong_FR) "
-                                        "values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", tuple_of_tuples)
+                self.cursor.executemany(qry, tuple_of_tuples)
 
             except pyodbc.Error as err:
                 self.cursor.rollback()
@@ -151,56 +151,5 @@ class sqlDb(object):
             else:
                 self.cursor.commit()
                 inserted += 1
-        print("Inserted " + str(inserted) + " records.")
+        print("Inserted " + str(inserted) + " records.\n")
         return inserted
-
-    def insert_dimension_values(self, dim_rows):  # TEST FUNCTION
-        # insert dimension values data
-        # find last identity column
-        cur_dim_val_id = self.get_last_dimension_value_id()
-
-        if cur_dim_val_id:
-            # increment dim value id for each insert
-            for dim_row in dim_rows:
-                cur_dim_val_id += 1
-                dim_row[0] = cur_dim_val_id  # updates id for each row
-                print("Inserting: " + str(dim_row))
-
-            # do the insert
-            query = "INSERT INTO gis.DimensionValues(DimensionValueId, DimensionId, Display_EN, " \
-                    "Display_FR, ValueDisplayOrder, ValueDisplayParent) " \
-                    "VALUES(?, ?, ?, ?, ?, ?)"
-            self.cursor.executemany(query, dim_rows)
-            self.connection.commit()
-            return True
-        else:
-            return False
-
-    def update_dimension(self):  # TEST FUNCTION
-        # update dimension data
-        query = "UPDATE gis.Dimensions SET Dimension_EN = ? WHERE DimensionId = ?"
-        self.cursor.execute(query, 'Date', 6)
-        self.connection.commit()
-
-    def vector_and_ref_period_match(self, product_id, vector_id, reference_period):
-        # find match for specified product, vector and reference period
-        # Note we first want to know if the vector matches, and THEN
-        #   if the reference period matches. This is done by getting
-        #   all reference periods for a vector and then searching the
-        #   result for the specified reference period.
-        # Return Values:
-        #   VectorFound --> only a matching vector was found
-        #   VectorRefPeriodFound --> matching vector and reference period were both found
-        #   NotFound --> no match was found
-        retval = "NotFound"
-        query = "SELECT ReferencePeriod FROM gis.Indicator WHERE IndicatorThemeId = ? AND Vector = ?"
-        self.cursor.execute(query, int(product_id), int(vector_id))
-
-        results = self.cursor.fetchall()
-        if len(results) > 0:
-            retval = "VectorFound"
-            for res in results:
-                if res[0].strftime("%Y-%m-%d") == reference_period:
-                    retval = "VectorRefPeriodFound"
-
-        return retval
