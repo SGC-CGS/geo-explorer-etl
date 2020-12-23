@@ -44,7 +44,7 @@ if __name__ == "__main__":
         else:
             print("Found " + str(len(products_to_update)) + " tables to update: " + str(products_to_update))
 
-            products_to_update = [46100053]  # TODO - REMOVE TEST CODE TO RUN ALL PRODUCTS
+            products_to_update = [46100027]  # TODO - REMOVE TEST CODE TO RUN ALL PRODUCTS
 
             # process for each product
             for pid in products_to_update:

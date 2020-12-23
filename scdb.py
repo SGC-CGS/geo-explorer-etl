@@ -51,50 +51,28 @@ class sqlDb(object):
         return retval
 
     def execute_simple_select_query(self, query):
-        # execute a simple select query (no criteria) and return all results
+        # execute a simple select query (no criteria) and return a single result, or false if no values
+        retval = False
         self.cursor.execute(query)
         results = self.cursor.fetchall()
-        return results
-
-    def get_last_dimension_id(self):
-        # returns h
-        # ighest dimension id in db
-        query = "SELECT MAX(DimensionId) FROM gis.Dimensions"
-        results = self.execute_simple_select_query(query)
-        retval = False
-        if len(results) == 1:
-            retval = results[0][0]
-        return retval
-
-    def get_last_dimension_value_id(self):
-        # returns highest dimension value id in db
-        query = "SELECT MAX(DimensionValueId) FROM gis.DimensionValues"
-        results = self.execute_simple_select_query(query)
-        retval = False
         if len(results) == 1:
             retval = results[0][0]
         return retval
 
     def get_last_indicator_id(self):
-        # returns highest indicator id in db
+        # returns highest indicator id in db, or false if none
         query = "SELECT MAX(IndicatorId) FROM gis.Indicator"
-        results = self.execute_simple_select_query(query)
-        retval = 0  # if it stays 0 the table is empty
-        if len(results) == 1:
-            retval = results[0][0]
+        retval = self.execute_simple_select_query(query)
         return retval
 
     def get_last_indicator_value_id(self):
-        # returns highest indicator values id in db
+        # returns highest indicator values id in db, or false if none
         query = "SELECT MAX(IndicatorValueId) FROM gis.IndicatorValues"
-        results = self.execute_simple_select_query(query)
-        retval = False
-        if len(results) == 1:
-            retval = results[0][0]
+        retval = self.execute_simple_select_query(query)
         return retval
 
     def get_matching_product_list(self, changed_products):
-        # returns products in that match changed_products list
+        # returns list of product ids that match changed_products list
         retval = []
         if len(changed_products) > 0:
             in_clause = ', '.join(map(str, changed_products))  # flatten list
@@ -114,26 +92,56 @@ class sqlDb(object):
         return results
 
     def insert_geography_level_for_indicator(self, df):
-        # insert rows to db from dataframe df
-        # returns number of rows inserted
+        # setup gis.GeographyLevelForIndicator query from dataframe and call insert. Returns num of rows inserted.
         print("Inserting to gis.GeographyLevelForIndicator... ")
-        qry = "INSERT INTO gis.GeographicLevelForIndicator (IndicatorId, GeographicLevelId) values (?,?)"
+        qry = "INSERT INTO gis.GeographicLevelForIndicator (IndicatorId, GeographicLevelId) VALUES (?,?)"
+        inserted = self.insert_dataframe_rows(qry, df)
+        return inserted
+
+    def insert_geography_reference_for_indicator(self, df):
+        # setup gis.GeographyReferenceForIndicator query from dataframe and call insert. Returns num of rows inserted.
+        print("Inserting to gis.GeographyReferenceForIndicator... ")
+        qry = "INSERT INTO gis.GeographicReferencelForIndicator (GeographyReferenceId, IndicatorId, " \
+              "IndicatorValueId, ReferencePeriod) VALUES (?,?,?,?)"
         inserted = self.insert_dataframe_rows(qry, df)
         return inserted
 
     def insert_indicator(self, df):
-        # insert rows to db from dataframe df
-        # returns number of rows inserted
+        # setup gis.Indicator query from dataframe and call insert. Returns num of rows inserted.
         print("Inserting to gis.Indicator... ")
         qry = "INSERT INTO gis.Indicator (IndicatorId, IndicatorName_EN, IndicatorName_FR, IndicatorThemeID, " \
               "ReleaseIndicatorDate, ReferencePeriod, IndicatorCode, IndicatorDisplay_EN, IndicatorDisplay_FR, " \
-              "UOM_EN, UOM_FR, Vector, IndicatorNameLong_EN, IndicatorNameLong_FR) values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+              "UOM_EN, UOM_FR, Vector, IndicatorNameLong_EN, IndicatorNameLong_FR) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+        inserted = self.insert_dataframe_rows(qry, df)
+        return inserted
+
+    def insert_indicator_metadata(self, df):
+        # setup gis.IndicatorMetaData query from dataframe and call insert. Returns num of rows inserted.
+        print("Inserting to gis.IndicatorMetadata... ")
+        qry = "INSERT INTO gis.IndicatorMetadata (MetaDataId, IndicatorId, FieldAlias_EN, FieldAlias_FR, " \
+              "DataFormatId, DefaultBreaksAlgorithmId, DefaultBreaks, PrimaryChartTypeId, PrimaryQuery, ColorTo, " \
+              "ColorFrom, DimensionUniqueKey, DefaultRelatedChartId) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)"
+        inserted = self.insert_dataframe_rows(qry, df)
+        return inserted
+
+    def insert_indicator_values(self, df):
+        # set up gis.IndicatorValues query from data frame and call insert. Returns number of rows inserted.
+        print("Inserting to gis.IndicatorValues... ")
+        qry = "INSERT INTO gis.IndicatorValues (IndicatorValueId, Value, NullReasonId, IndicatorValueCode, " \
+              "FormattedValue_EN, FormattedValue_FR) values (?,?,?,?,?,?)"
+        inserted = self.insert_dataframe_rows(qry, df)
+        return inserted
+
+    def insert_related_charts(self, df):
+        # set up gis.RelatedCharts query from data frame and call insert. Returns number of rows inserted.
+        print("Inserting to gis.RelatedCharts... ")
+        qry = "INSERT INTO gis.RelatedCharts (RelatedChartId, ChartTitle_EN, ChartTitle_FR, Query, ChartTypeId, " \
+              "IndicatorMetaDataId, DataFormatId, FieldAlias_EN, FieldAlias_FR) values (?,?,?,?,?,?,?,?,?)"
         inserted = self.insert_dataframe_rows(qry, df)
         return inserted
 
     def insert_dataframe_rows(self, qry, df):
-        # insert an entire dataframe (df) to the database
-        # based on specified query (qry)
+        # insert an entire dataframe (df) to the database based on specified query (qry)
         # returns number of rows inserted (inserted)
         inserted = 0
 
@@ -143,7 +151,6 @@ class sqlDb(object):
             tuple_of_tuples = tuple(tuple(x) for x in chunk)  # tuple required for pyodbc fast insert
             try:
                 self.cursor.executemany(qry, tuple_of_tuples)
-
             except pyodbc.Error as err:
                 self.cursor.rollback()
                 print("Could not add product to database. See detailed mssage below:")
