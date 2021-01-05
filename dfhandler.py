@@ -1,6 +1,7 @@
 # data frame handling
 
 import helpers as h  # helper functions
+import numpy as np
 import pandas as pd
 
 
@@ -32,8 +33,8 @@ def build_dimension_ul(ref_year, indicator_name):
 def build_geographic_level_for_indicator_df(edf, idf):
     # build the data frame for GeographicLevelForIndicator
     # based on dataframe of english csv file (edf) and dataframe of Indicator
-    # codes and Ids that were just inserted to the db.
-    print("Building GeohraphicLevelForIndicator table.")
+    # codes and Ids that were just inserted to the db (idf).
+    print("Building GeographicLevelForIndicator table.")
     df_gli = edf.loc[:, ["DGUID", "IndicatorCode"]]  # subset of full en dataset
     df_gli["DGUID"] = df_gli["DGUID"].str[4:9]  # extract geo level id from DGUID
     df_gli.rename(columns={"DGUID": "GeographicLevelId"}, inplace=True)  # rename to match db
@@ -66,6 +67,83 @@ def build_indicator_code(coordinate, reference_date, pid_str):
     temp_coordinate = coordinate.str.replace(r"^([^.]+\.)", "", regex=True)  # strips 1st dimension (geography)
     indicator_code = pid_str + "." + temp_coordinate + "." + reference_date + "-01-01"
     return indicator_code
+
+
+def build_indicator_df_start(edf, fdf):
+    # edf --> english dataframe
+    # fdf --> french dataframe
+    # drop duplicte indicator codes from english dataframe
+    # merge with french and return the merged df
+    print("Building Indicator Table...")
+    new_df = pd.merge(
+        edf.drop_duplicates(subset=["IndicatorCode"], inplace=False),
+        fdf, on="IndicatorCode"
+    )
+    return new_df
+
+
+def build_indicator_df_end(df, dims, next_id):
+    # for the given df:
+    #   populate indicator ids starting from next_id
+    #   concatenate dimension names to populate specified string fields
+    #   fix any data types/lengths as required before db insert
+
+    df["IndicatorId"] = create_id_series(df, next_id)  # populate IDs
+
+    # operations on common field names for each language
+    for ln in list(["EN", "FR"]):
+        # concatenations
+        df["IndicatorName_" + ln] = concat_dimension_cols(dims[ln.lower()], df, " _ ")
+        df["IndicatorDisplay_" + ln] = build_dimension_ul(df["RefYear"], df["IndicatorName_" + ln])
+        df["IndicatorNameLong_" + ln] = df["IndicatorName_" + ln]  # just a copy of a field required for db
+        # field lengths
+        df["IndicatorName_" + ln] = df["IndicatorName_" + ln].str[:1000]  # str
+        df["IndicatorDisplay_" + ln] = df["IndicatorDisplay_" + ln].str[:500]  # str
+        df["UOM_" + ln] = df["UOM_" + ln].astype("string").str[:50]  # str
+        df["IndicatorNameLong_" + ln] = df["IndicatorNameLong_" + ln].str[:1000]  # str
+
+    df["ReleaseIndicatorDate"] = df["ReleaseIndicatorDate"].astype("datetime64[ns]")
+    df["IndicatorCode"] = df["IndicatorCode"].str[:100]
+
+    # Keep only the columns needed for insert
+    df = df.loc[:, ["IndicatorId", "IndicatorName_EN", "IndicatorName_FR", "IndicatorThemeID",
+                    "ReleaseIndicatorDate", "ReferencePeriod", "IndicatorCode", "IndicatorDisplay_EN",
+                    "IndicatorDisplay_FR", "UOM_EN", "UOM_FR", "Vector", "IndicatorNameLong_EN",
+                    "IndicatorNameLong_FR"]]
+
+    print("Finished building Indicator table.")
+    return df
+
+
+def build_indicator_values_df(edf, gdf, ndf, next_id):
+    # build the data frame for IndicatorValues
+    # based on dataframe of english csv file (edf), GeographyReference ids (gdf), and NullReason ids (ndf).
+    # populate indicator value ids starting from next_id.
+
+    print("Building IndicatorValues table.")
+    df_iv = edf.loc[:, ["DGUID", "IndicatorCode", "STATUS", "VALUE"]]  # subset of full en dataset
+    df_iv["IndicatorValueId"] = create_id_series(edf, next_id)  # populate IDs
+
+    df_iv = pd.merge(df_iv, gdf, left_on="DGUID", right_on="GeographyReferenceId", how="left")  # join to geoRef for id
+    print(str(df_iv.shape[0]) + "pre")
+    df_iv.dropna(subset=["GeographyReferenceId"], inplace=True)  # drop empty ids
+    df_iv.drop(["GeographyReferenceId"], axis=1, inplace=True)
+
+    df_iv["IndicatorValueCode"] = df_iv["DGUID"] + "." + df_iv["IndicatorCode"]  # combine DGUID and IndicatorCode
+    df_iv.drop(["DGUID", "IndicatorCode"], axis=1, inplace=True)
+
+    df_iv = pd.merge(df_iv, ndf, left_on="STATUS", right_on="Symbol", how="left")  # join to NullReasonId for Symbol
+    df_iv.drop(["STATUS", "Symbol"], axis=1, inplace=True)
+
+    # set datatypes for db
+    df_iv = df_iv.fillna(np.nan).replace([np.nan], [None])  # workaround to set nan/na=None (prevents sql error 22003)
+    df_iv["IndicatorValueCode"] = df_iv["IndicatorValueCode"].str[:100]
+
+    # Keep only the columns needed for insert
+    df_iv = df_iv.loc[:, ["IndicatorValueId", "VALUE", "NullReasonId", "IndicatorValueCode"]]
+
+    print("Finished building IndicatorValues table.")
+    return df_iv
 
 
 def concat_dimension_cols(dimensions, df, delimiter):
@@ -101,38 +179,9 @@ def convert_csv_to_df(csv_file_name, delim, cols):
     return csv_df
 
 
-def finish_indicator_df(df, dims, next_id):
-    # for the given df:
-    #   populate indicator ids starting from next_id
-    #   concatenate dimension names to populate specified string fields
-    #   fix any data types/lengths as required before db insert
-
-    # populate ids
-    df["IndicatorId"] = pd.RangeIndex(start=next_id, stop=(next_id + df.shape[0]))
-
-    # operations on common field names for each language
-    for ln in list(["EN", "FR"]):
-        # concatenations
-        df["IndicatorName_" + ln] = concat_dimension_cols(dims[ln.lower()], df, " _ ")
-        df["IndicatorDisplay_" + ln] = build_dimension_ul(df["RefYear"], df["IndicatorName_" + ln])
-        df["IndicatorNameLong_" + ln] = df["IndicatorName_" + ln]  # just a copy of a field required for db
-        # field lengths
-        df["IndicatorName_" + ln] = df["IndicatorName_" + ln].str[:1000]  # str
-        df["IndicatorDisplay_" + ln] = df["IndicatorDisplay_" + ln].str[:500]  # str
-        df["UOM_" + ln] = df["UOM_" + ln].astype("string").str[:50]  # str
-        df["IndicatorNameLong_" + ln] = df["IndicatorNameLong_" + ln].str[:1000]  # str
-
-    df["ReleaseIndicatorDate"] = df["ReleaseIndicatorDate"].astype("datetime64[ns]")
-    df["IndicatorCode"] = df["IndicatorCode"].str[:100]  # str
-
-    # Keep only the columns needed for insert
-    df = df.loc[:, ["IndicatorId", "IndicatorName_EN", "IndicatorName_FR", "IndicatorThemeID",
-                    "ReleaseIndicatorDate", "ReferencePeriod", "IndicatorCode", "IndicatorDisplay_EN",
-                    "IndicatorDisplay_FR", "UOM_EN", "UOM_FR", "Vector", "IndicatorNameLong_EN",
-                    "IndicatorNameLong_FR"]]
-
-    print("Finished building Indicator table.")
-    return df
+def create_id_series(df, start_id):
+    # returns a series of ids for a dataframe starting from start_id
+    return pd.RangeIndex(start=start_id, stop=(start_id + df.shape[0]))
 
 
 def load_and_prep_prod_df(csvfile, dims, language, delim, prod_id, rel_date):
@@ -169,16 +218,3 @@ def load_and_prep_prod_df(csvfile, dims, language, delim, prod_id, rel_date):
         df["Vector"] = df["Vector"].str.replace("v", "").astype("int32")  # remove v, make int
 
     return df
-
-
-def start_indicator_df(edf, fdf):
-    # edf --> english dataframe
-    # fdf --> french dataframe
-    # drop duplicte indicator codes from english dataframe
-    # merge with french and return the merged df
-    print("Building Indicator Table...")
-    new_df = pd.merge(
-        edf.drop_duplicates(subset=["IndicatorCode"], inplace=False),
-        fdf, on="IndicatorCode"
-    )
-    return new_df

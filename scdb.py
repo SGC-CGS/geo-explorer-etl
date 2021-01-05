@@ -28,7 +28,7 @@ class sqlDb(object):
         qry2 = "DELETE FROM gis.IndicatorMetaData WHERE IndicatorId IN (" + pid_subqry + ") "
         qry3 = "DELETE FROM gis.IndicatorValues WHERE IndicatorValueId IN (" \
                "SELECT IndicatorValueId FROM gis.GeographyReferenceForIndicator WHERE IndicatorId IN " \
-               "(" + pid_subqry + "))"
+               "(" + pid_subqry + ")) OR IndicatorValueCode like '%" + pid + "%'"  # added 2nd clause to confluence code
         qry4 = "DELETE FROM gis.GeographyReferenceForIndicator WHERE IndicatorId in (" + pid_subqry + ") "
         qry5 = "DELETE FROM gis.GeographicLevelForIndicator WHERE IndicatorId in (" + pid_subqry + ") "
         qry6 = "DELETE FROM gis.Indicator WHERE IndicatorThemeId = ?"
@@ -42,7 +42,7 @@ class sqlDb(object):
             self.cursor.execute(qry6, pid)
         except pyodbc.Error as err:
             self.cursor.rollback()
-            print("Could not delete product from database. See detailed mssage below:")
+            print("Could not delete product from database. See detailed message below:")
             print(str(err))
         else:
             self.cursor.commit()
@@ -58,6 +58,18 @@ class sqlDb(object):
         if len(results) == 1:
             retval = results[0][0]
         return retval
+
+    def get_geo_reference_ids(self):
+        # return all ids from gis.GeographyReference as a pandas dataframe
+        query = "SELECT GeographyReferenceId FROM gis.GeographyReference"
+        results = pd.read_sql(query, self.connection)
+        return results
+
+    def get_indicator_null_reason(self):
+        # return all rows from gis.IndicatorNullReason as a pandas dataframe
+        query = "SELECT NullReasonId, Symbol FROM gis.IndicatorNullReason WHERE Symbol IS NOT NULL"
+        results = pd.read_sql(query, self.connection)
+        return results
 
     def get_last_indicator_id(self):
         # returns highest indicator id in db, or false if none
@@ -85,8 +97,7 @@ class sqlDb(object):
         return retval
 
     def get_pid_indicators_as_df(self, product_id):
-        # get the indicators for the specified product_id
-        # returns a pandas dataframe
+        # return the indicators for the specified product_id as a pandas dataframe
         query = "SELECT IndicatorId, IndicatorCode FROM gis.Indicator WHERE IndicatorThemeId = ?"
         results = pd.read_sql(query, self.connection, params=[product_id])
         return results
@@ -127,8 +138,8 @@ class sqlDb(object):
     def insert_indicator_values(self, df):
         # set up gis.IndicatorValues query from data frame and call insert. Returns number of rows inserted.
         print("Inserting to gis.IndicatorValues... ")
-        qry = "INSERT INTO gis.IndicatorValues (IndicatorValueId, Value, NullReasonId, IndicatorValueCode, " \
-              "FormattedValue_EN, FormattedValue_FR) values (?,?,?,?,?,?)"
+        qry = "INSERT INTO gis.IndicatorValues (IndicatorValueId, Value, NullReasonId, IndicatorValueCode) " \
+              "values (?,?,?,?)"
         inserted = self.insert_dataframe_rows(qry, df)
         return inserted
 
@@ -153,8 +164,8 @@ class sqlDb(object):
                 self.cursor.executemany(qry, tuple_of_tuples)
             except pyodbc.Error as err:
                 self.cursor.rollback()
-                print("Could not add product to database. See detailed mssage below:")
-                print(str(err))
+                print("Could not insert row to database. See detailed mssage below:")
+                print(str(err) + "\n" + str(tuple_of_tuples) + "\n")
             else:
                 self.cursor.commit()
                 inserted += 1
