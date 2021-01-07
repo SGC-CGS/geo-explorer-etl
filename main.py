@@ -85,7 +85,7 @@ if __name__ == "__main__":
                         df_ind = dfh.build_indicator_df_start(df_en, df_fr)  # prep first half of dataframe
                         del df_fr  # drop french dataframe to save memory
                         df_ind = dfh.build_indicator_df_end(df_ind, dimensions, next_ind_id)  # build rest of dataframe
-                        db.insert_indicator(df_ind)  # insert to db
+                        db.insert_dataframe_rows(df_ind, "Indicator", "gis")  # insert to db
                         del df_ind
 
                         # get the new IndicatorIds from db (needed for several of the next table updates)
@@ -93,7 +93,7 @@ if __name__ == "__main__":
 
                         # GeographicLevelforIndicator
                         df_gli = dfh.build_geographic_level_for_indicator_df(df_en, df_new_indicators)  # prep dataframe
-                        db.insert_geography_level_for_indicator(df_gli)  # insert to db
+                        db.insert_dataframe_rows(df_gli, "GeographicLevelForIndicator", "gis")  # insert to db
                         del df_gli
 
                         # IndicatorValues
@@ -102,7 +102,7 @@ if __name__ == "__main__":
                         df_ind_null = db.get_indicator_null_reason()  # codes from gis.IndicatorNullReason
                         df_ind_val = dfh.build_indicator_values_df(df_en, df_geo_ref, df_ind_null,
                                                                    next_ind_val_id)  # prep dataframe
-                        db.insert_indicator_values(df_ind_val)  # insert to db
+                        db.insert_dataframe_rows(df_ind_val, "IndicatorValues", "gis")  # insert to db
                         del df_ind_val
 
                         del df_en

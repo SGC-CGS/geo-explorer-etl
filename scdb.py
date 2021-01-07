@@ -1,6 +1,8 @@
 # Database class
+import urllib.parse
 import pandas as pd
 import pyodbc
+from sqlalchemy import create_engine
 
 
 # noinspection SpellCheckingInspection
@@ -10,11 +12,16 @@ class sqlDb(object):
         self.driver = driver
         self.server = server
         self.database = database
-        conn_string = "Driver={" + self.driver + "};Server=" + self.server + \
-                      ";Trusted_Connection=yes;Database=" + self.database + ";"
+        conn_string = "Driver={" + self.driver + "};Server=" + self.server + ";Trusted_Connection=yes;Database=" + \
+                      self.database + ";"
         print("Connecting to DB: " + conn_string)
         self.connection = pyodbc.connect(conn_string, autocommit=False)
         self.cursor = self.connection.cursor()
+
+        # sql alchemy engine for bulk inserts
+        sa_params = urllib.parse.quote(conn_string)
+        print("Setting up SQL Alchemy engine: " + sa_params)
+        self.engine = create_engine("mssql+pyodbc:///?odbc_connect=%s" % sa_params, fast_executemany=True)
 
     def delete_product(self, product_id):
         # Delete queries are in order as described in confluence document for deleting a product
@@ -62,14 +69,14 @@ class sqlDb(object):
     def get_geo_reference_ids(self):
         # return all ids from gis.GeographyReference as a pandas dataframe
         query = "SELECT GeographyReferenceId FROM gis.GeographyReference"
-        results = pd.read_sql(query, self.connection)
-        return results
+        retval = pd.read_sql(query, self.connection)
+        return retval
 
     def get_indicator_null_reason(self):
         # return all rows from gis.IndicatorNullReason as a pandas dataframe
         query = "SELECT NullReasonId, Symbol FROM gis.IndicatorNullReason WHERE Symbol IS NOT NULL"
-        results = pd.read_sql(query, self.connection)
-        return results
+        retval = pd.read_sql(query, self.connection)
+        return retval
 
     def get_last_indicator_id(self):
         # returns highest indicator id in db, or false if none
@@ -99,75 +106,22 @@ class sqlDb(object):
     def get_pid_indicators_as_df(self, product_id):
         # return the indicators for the specified product_id as a pandas dataframe
         query = "SELECT IndicatorId, IndicatorCode FROM gis.Indicator WHERE IndicatorThemeId = ?"
-        results = pd.read_sql(query, self.connection, params=[product_id])
-        return results
+        retval = pd.read_sql(query, self.connection, params=[product_id])
+        return retval
 
-    def insert_geography_level_for_indicator(self, df):
-        # setup gis.GeographyLevelForIndicator query from dataframe and call insert. Returns num of rows inserted.
-        print("Inserting to gis.GeographyLevelForIndicator... ")
-        qry = "INSERT INTO gis.GeographicLevelForIndicator (IndicatorId, GeographicLevelId) VALUES (?,?)"
-        inserted = self.insert_dataframe_rows(qry, df)
-        return inserted
+    def insert_dataframe_rows(self, df, table_name, schema_name):
+        # insert dataframe (df) to the database for schema (schema_name) and table (table_name)
+        print("Inserting to " + table_name + "." + schema_name + "... ")
+        ret_val = False
 
-    def insert_geography_reference_for_indicator(self, df):
-        # setup gis.GeographyReferenceForIndicator query from dataframe and call insert. Returns num of rows inserted.
-        print("Inserting to gis.GeographyReferenceForIndicator... ")
-        qry = "INSERT INTO gis.GeographicReferencelForIndicator (GeographyReferenceId, IndicatorId, " \
-              "IndicatorValueId, ReferencePeriod) VALUES (?,?,?,?)"
-        inserted = self.insert_dataframe_rows(qry, df)
-        return inserted
+        try:
+            df.to_sql(name=table_name, con=self.engine, schema=schema_name, if_exists="append", index=False,
+                      chunksize=10000)  # make sure to use default method=None
+        except pyodbc.Error as err:
+            print("Could not insert to database. See detailed message below:")
+            print(str(err) + "\n")
+        else:
+            print("Inserted " + str(df.shape[0]) + " records.\n")
+            ret_val = True
 
-    def insert_indicator(self, df):
-        # setup gis.Indicator query from dataframe and call insert. Returns num of rows inserted.
-        print("Inserting to gis.Indicator... ")
-        qry = "INSERT INTO gis.Indicator (IndicatorId, IndicatorName_EN, IndicatorName_FR, IndicatorThemeID, " \
-              "ReleaseIndicatorDate, ReferencePeriod, IndicatorCode, IndicatorDisplay_EN, IndicatorDisplay_FR, " \
-              "UOM_EN, UOM_FR, Vector, IndicatorNameLong_EN, IndicatorNameLong_FR) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
-        inserted = self.insert_dataframe_rows(qry, df)
-        return inserted
-
-    def insert_indicator_metadata(self, df):
-        # setup gis.IndicatorMetaData query from dataframe and call insert. Returns num of rows inserted.
-        print("Inserting to gis.IndicatorMetadata... ")
-        qry = "INSERT INTO gis.IndicatorMetadata (MetaDataId, IndicatorId, FieldAlias_EN, FieldAlias_FR, " \
-              "DataFormatId, DefaultBreaksAlgorithmId, DefaultBreaks, PrimaryChartTypeId, PrimaryQuery, ColorTo, " \
-              "ColorFrom, DimensionUniqueKey, DefaultRelatedChartId) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)"
-        inserted = self.insert_dataframe_rows(qry, df)
-        return inserted
-
-    def insert_indicator_values(self, df):
-        # set up gis.IndicatorValues query from data frame and call insert. Returns number of rows inserted.
-        print("Inserting to gis.IndicatorValues... ")
-        qry = "INSERT INTO gis.IndicatorValues (IndicatorValueId, Value, NullReasonId, IndicatorValueCode) " \
-              "values (?,?,?,?)"
-        inserted = self.insert_dataframe_rows(qry, df)
-        return inserted
-
-    def insert_related_charts(self, df):
-        # set up gis.RelatedCharts query from data frame and call insert. Returns number of rows inserted.
-        print("Inserting to gis.RelatedCharts... ")
-        qry = "INSERT INTO gis.RelatedCharts (RelatedChartId, ChartTitle_EN, ChartTitle_FR, Query, ChartTypeId, " \
-              "IndicatorMetaDataId, DataFormatId, FieldAlias_EN, FieldAlias_FR) values (?,?,?,?,?,?,?,?,?)"
-        inserted = self.insert_dataframe_rows(qry, df)
-        return inserted
-
-    def insert_dataframe_rows(self, qry, df):
-        # insert an entire dataframe (df) to the database based on specified query (qry)
-        # returns number of rows inserted (inserted)
-        inserted = 0
-
-        self.cursor.fast_executemany = True
-        for row_count in range(0, df.shape[0]):
-            chunk = df.iloc[row_count:row_count + 1, :].values.tolist()
-            tuple_of_tuples = tuple(tuple(x) for x in chunk)  # tuple required for pyodbc fast insert
-            try:
-                self.cursor.executemany(qry, tuple_of_tuples)
-            except pyodbc.Error as err:
-                self.cursor.rollback()
-                print("Could not insert row to database. See detailed mssage below:")
-                print(str(err) + "\n" + str(tuple_of_tuples) + "\n")
-            else:
-                self.cursor.commit()
-                inserted += 1
-        print("Inserted " + str(inserted) + " records.\n")
-        return inserted
+        return ret_val
