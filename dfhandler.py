@@ -41,10 +41,10 @@ def build_geographic_level_for_indicator_df(edf, idf):
     pattern = "|".join(["S0504", "S0505", "S0506"])  # S0504(CA),S0505(CMAP),S0506(CAP)-->S0503(CMA)
     df_gli["GeographicLevelId"] = df_gli["GeographicLevelId"].str.replace(pattern, "S0503")
     df_gli.drop_duplicates(inplace=True)  # remove dupe rows
-    df_gli.dropna(inplace=True)  # remove any row w/ empty value
 
     df_gli = pd.merge(df_gli, idf, on="IndicatorCode", how="left")  # join datasets
     df_gli.drop(["IndicatorCode"], axis=1, inplace=True)  # no longer need col
+    df_gli.dropna(inplace=True)  # remove any row w/ empty value
 
     # Ensure columns are in order needed for insert
     df_gli = df_gli.loc[:, ["IndicatorId", "GeographicLevelId"]]
@@ -125,9 +125,12 @@ def build_indicator_values_df(edf, gdf, ndf, next_id):
     df_iv["IndicatorValueId"] = create_id_series(edf, next_id)  # populate IDs
 
     df_iv = pd.merge(df_iv, gdf, left_on="DGUID", right_on="GeographyReferenceId", how="left")  # join to geoRef for id
-    print(str(df_iv.shape[0]) + "pre")
     df_iv.dropna(subset=["GeographyReferenceId"], inplace=True)  # drop empty ids
     df_iv.drop(["GeographyReferenceId"], axis=1, inplace=True)
+
+    # TODO: The step aboves removes any rows that do not have a matching DGUID in the GeographyReference table.
+    #  This step exists in the PowerBI process and results in many IndicatorValues being removed from the dataset.
+    #  It is not currently clear how the GeographyReference table gets updated with new DGUIDs.
 
     df_iv["IndicatorValueCode"] = df_iv["DGUID"] + "." + df_iv["IndicatorCode"]  # combine DGUID and IndicatorCode
     df_iv.drop(["DGUID", "IndicatorCode"], axis=1, inplace=True)
