@@ -213,11 +213,3 @@ class serviceWds(object):
                 else:
                     print("The file could not be downloaded.")
         return retval
-
-    # def get_members_from_dimension(self, dimension):
-    #     retval = False
-    #     if dimension["member"]:
-    #         retval = dimension["member"]
-    #         print("MEMBER")
-    #         pprint(retval)
-    #     return retval
