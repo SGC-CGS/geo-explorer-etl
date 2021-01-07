@@ -3,6 +3,7 @@ import urllib.parse
 import pandas as pd
 import pyodbc
 from sqlalchemy import create_engine
+from sqlalchemy import exc
 
 
 # noinspection SpellCheckingInspection
@@ -111,17 +112,24 @@ class sqlDb(object):
 
     def insert_dataframe_rows(self, df, table_name, schema_name):
         # insert dataframe (df) to the database for schema (schema_name) and table (table_name)
+        # Note: sqlalchemy fails silently if the table name doesn't exist. Make sure table names are valid.
         print("Inserting to " + table_name + "." + schema_name + "... ")
         ret_val = False
 
         try:
             df.to_sql(name=table_name, con=self.engine, schema=schema_name, if_exists="append", index=False,
                       chunksize=10000)  # make sure to use default method=None
-        except pyodbc.Error as err:
-            print("Could not insert to database. See detailed message below:")
+        except (pyodbc.Error, exc.SQLAlchemyError) as err:
+            print("Could not insert to database for table: " + schema_name + "." + table_name +
+                                                             ". See detailed message below:")
             print(str(err) + "\n")
         else:
-            print("Inserted " + str(df.shape[0]) + " records.\n")
-            ret_val = True
+            if df.shape[0] == 0:
+                # try to catch some of the possible silent db fails here.
+                raise Exception("OTHER DB ERROR: No records were inserted to " + schema_name + "." + table_name +
+                      " \nThis may indicate a problem with the data. Verify data before running this script again.")
+            else:
+                print("Inserted " + str(df.shape[0]) + " records.\n")
+                ret_val = True
 
         return ret_val
