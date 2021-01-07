@@ -78,7 +78,7 @@ class serviceWds(object):
         return
 
     def check_wds_response_status_code(self, response_code):
-        # wds returns a response code for each line item
+        # wds returns a response code for each line item (ex. self.check_wds_response_status_code(8))
         # function returns 0 if Success, status message if anything else
         retval = 0
         if response_code != 0:
@@ -147,12 +147,10 @@ class serviceWds(object):
                     elif set_type == "wdsResponseStatus":
                         self.wds_response_status_codes = resp["object"][set_type]
                 retval = True
-                # print(self.check_wds_response_status_code(8)) # example to look up a code
         return retval
 
     def get_cube_metadata(self, product_id):
-        # submits WDS request, returns cube metadata for product_id
-        # product_id - 8 digits
+        # submits WDS request, returns cube metadata for 8 digit product_id
         url = self.wds_url + "getCubeMetadata"
         post_vars = [{"productId": int(product_id)}]
         print("Retrieving " + str(product_id) + " metadata from " + url + "...\n")
