@@ -82,29 +82,40 @@ if __name__ == "__main__":
 
                         # Indicator
                         next_ind_id = db.get_last_indicator_id() + 1  # setup unique IDs
-                        df_ind = dfh.build_indicator_df_start(df_en, df_fr)  # prep first half of dataframe
+                        df_ind = dfh.build_indicator_df_start(df_en, df_fr)  # prep first half of df
                         del df_fr  # drop french dataframe to save memory
-                        df_ind = dfh.build_indicator_df_end(df_ind, dimensions, next_ind_id)  # build rest of dataframe
+                        df_ind = dfh.build_indicator_df_end(df_ind, dimensions, next_ind_id)  # prep rest of df
                         db.insert_dataframe_rows(df_ind, "Indicator", "gis")  # insert to db
-                        del df_ind
-
-                        # get the new IndicatorIds from db (needed for several of the next table updates)
-                        df_new_indicators = db.get_pid_indicators_as_df(pid)
+                        # keep the new IndicatorIds and codes for next set of table updates
+                        df_ind = df_ind.loc[:, ["IndicatorId", "IndicatorCode"]]
 
                         # GeographicLevelforIndicator
-                        df_gli = dfh.build_geographic_level_for_indicator_df(df_en, df_new_indicators)  # prep dataframe
+                        df_gli = dfh.build_geographic_level_for_indicator_df(df_en, df_ind)  # prep df
                         db.insert_dataframe_rows(df_gli, "GeographicLevelForIndicator", "gis")  # insert to db
                         del df_gli
 
+                        # get ids from gis.GeographyReference for next set of table updates
+                        df_geo_ref = db.get_geo_reference_ids()
+
                         # IndicatorValues
                         next_ind_val_id = db.get_last_indicator_value_id() + 1  # set unique IDs
-                        df_geo_ref = db.get_geo_reference_ids()  # ids from gis.GeographyReference
                         df_ind_null = db.get_indicator_null_reason()  # codes from gis.IndicatorNullReason
                         df_ind_val = dfh.build_indicator_values_df(df_en, df_geo_ref, df_ind_null,
-                                                                   next_ind_val_id)  # prep dataframe
+                                                                   next_ind_val_id)  # prep df
                         db.insert_dataframe_rows(df_ind_val, "IndicatorValues", "gis")  # insert to db
-                        del df_ind_val
+                        # keep the new IndicatorValueIds for next table update
+                        df_ind_val.drop(["VALUE", "NullReasonId"], axis=1, inplace=True)
+                        del df_ind_null
 
+                        # GeographyReferenceForIndicator
+                        df_gri = dfh.build_geography_reference_for_indicator_df(df_en, df_ind, df_geo_ref,
+                                                                                 df_ind_val)  # prep df
+                        db.insert_dataframe_rows(df_gri, "GeographyReferenceForIndicator", "gis")  # insert to db
+                        del df_ind_val
+                        del df_gri
+
+                        del df_ind
+                        del df_geo_ref
                         del df_en
 
     # delete the objects

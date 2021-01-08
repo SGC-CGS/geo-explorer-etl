@@ -60,10 +60,40 @@ def build_geographic_level_for_indicator_df(edf, idf):
     return df_gli
 
 
+def build_geography_reference_for_indicator_df(edf, idf, gdf, ivdf):
+    # Build the data frame for GeographicReferenceForIndicator based on dataframe of english csv file (edf),
+    # GeographyReference ids (gdf), Indicator # codes and Ids that were just inserted to the db (idf), and
+    # Indicator Values that were just added to the db (ivdf).
+    print("Building GeographicReferenceForIndicator table.")
+    df_gri = edf.loc[:, ["DGUID", "IndicatorCode", "ReferencePeriod"]]  # subset of full en dataset
+    df_gri = pd.merge(df_gri, idf, on="IndicatorCode", how="left")  # join datasets
+    df_gri["IndicatorValueCode"] = df_gri["DGUID"] + "." + df_gri["IndicatorCode"]  # combine DGUID and IndicatorCode
+
+    df_gri = pd.merge(df_gri, gdf, left_on="DGUID", right_on="GeographyReferenceId", how="left")  # join geoRef for id
+    check_null_geography_reference(df_gri)  # notify user of any DGUIDs w/o matching geoRef
+
+    df_gri.dropna(subset=["GeographyReferenceId", "DGUID"], inplace=True)  # drop rows with empty ids
+    df_gri.drop(["GeographyReferenceId"], axis=1, inplace=True)  # drop ref column used for merge
+    df_gri.rename(columns={"DGUID": "GeographyReferenceId"}, inplace=True)  # rename to match db
+    # TODO: The step aboves removes any rows that do not have a matching DGUID in the GeographyReference table or have
+    #  an empty DGUID. This step exists in the PowerBI process and results in many IndicatorValues being removed
+    #  from the dataset. It is not currently clear how the GeographyReference table gets updated with new DGUIDs.
+
+    df_gri = pd.merge(df_gri, ivdf, on="IndicatorValueCode", how="left")  # join to IndicatorValues for id
+    df_gri.drop(["IndicatorCode", "IndicatorValueCode"], axis=1, inplace=True)
+    df_gri.dropna(inplace=True)  # remove any rows w/ empty values
+
+    # Ensure columns are in order needed for insert, convert types as required
+    df_gri = df_gri.loc[:, ["GeographyReferenceId", "IndicatorId", "IndicatorValueId", "ReferencePeriod"]]
+    df_gri["GeographyReferenceId"] = df_gri["GeographyReferenceId"].astype("string").str[:25]
+    df_gri["ReferencePeriod"] = df_gri["ReferencePeriod"].astype("datetime64[ns]")
+
+    return df_gri
+
+
 def build_indicator_code(coordinate, reference_date, pid_str):
-    # build a custom indicator code that strips geography from the coordinate
-    # and adds a reference date
-    # IndicatorCode ex. 13100778.1.23.1.2017/2018-01-01
+    # build a custom indicator code that strips geography from the coordinate and adds a reference date
+    # IndicatorCode ex. 13100778.1.23.1.2018-01-01
     temp_coordinate = coordinate.str.replace(r"^([^.]+\.)", "", regex=True)  # strips 1st dimension (geography)
     indicator_code = pid_str + "." + temp_coordinate + "." + reference_date + "-01-01"
     return indicator_code
@@ -96,11 +126,11 @@ def build_indicator_df_end(df, dims, next_id):
         df["IndicatorName_" + ln] = concat_dimension_cols(dims[ln.lower()], df, " _ ")
         df["IndicatorDisplay_" + ln] = build_dimension_ul(df["RefYear"], df["IndicatorName_" + ln])
         df["IndicatorNameLong_" + ln] = df["IndicatorName_" + ln]  # just a copy of a field required for db
-        # field lengths
-        df["IndicatorName_" + ln] = df["IndicatorName_" + ln].str[:1000]  # str
-        df["IndicatorDisplay_" + ln] = df["IndicatorDisplay_" + ln].str[:500]  # str
-        df["UOM_" + ln] = df["UOM_" + ln].astype("string").str[:50]  # str
-        df["IndicatorNameLong_" + ln] = df["IndicatorNameLong_" + ln].str[:1000]  # str
+        # field lengths and types
+        df["IndicatorName_" + ln] = df["IndicatorName_" + ln].str[:1000]
+        df["IndicatorDisplay_" + ln] = df["IndicatorDisplay_" + ln].str[:500]
+        df["UOM_" + ln] = df["UOM_" + ln].astype("string").str[:50]
+        df["IndicatorNameLong_" + ln] = df["IndicatorNameLong_" + ln].str[:1000]
 
     df["ReleaseIndicatorDate"] = df["ReleaseIndicatorDate"].astype("datetime64[ns]")
     df["IndicatorCode"] = df["IndicatorCode"].str[:100]
@@ -123,11 +153,11 @@ def build_indicator_values_df(edf, gdf, ndf, next_id):
     print("Building IndicatorValues table.")
     df_iv = edf.loc[:, ["DGUID", "IndicatorCode", "STATUS", "VALUE"]]  # subset of full en dataset
     df_iv["IndicatorValueId"] = create_id_series(edf, next_id)  # populate IDs
-
     df_iv = pd.merge(df_iv, gdf, left_on="DGUID", right_on="GeographyReferenceId", how="left")  # join to geoRef for id
+    check_null_geography_reference(df_iv)  # notify user of any DGUIDs w/o matching geoRef
+
     df_iv.dropna(subset=["GeographyReferenceId"], inplace=True)  # drop empty ids
     df_iv.drop(["GeographyReferenceId"], axis=1, inplace=True)
-
     # TODO: The step aboves removes any rows that do not have a matching DGUID in the GeographyReference table.
     #  This step exists in the PowerBI process and results in many IndicatorValues being removed from the dataset.
     #  It is not currently clear how the GeographyReference table gets updated with new DGUIDs.
@@ -147,6 +177,18 @@ def build_indicator_values_df(edf, gdf, ndf, next_id):
 
     print("Finished building IndicatorValues table.")
     return df_iv
+
+
+def check_null_geography_reference(df):
+    # alert user w/ DGUID if any "GeographyReferenceId" in df has nulls
+    df_null_gr = df[df["GeographyReferenceId"].isna()].loc[:, ["DGUID"]].drop_duplicates(inplace=False)
+    if df_null_gr.shape[0] > 0:
+        print("***WARNING***\nThe following DGUIDs were not found in gis.GeographyReference and cannot be added "
+              "to the database.\nAny values other than <NA> should be investigated.")
+        with pd.option_context('display.max_rows', None):
+            print(df_null_gr["DGUID"])  # if the DGUID is also <NA>, then there is no problem
+        print("*************")
+    return
 
 
 def concat_dimension_cols(dimensions, df, delimiter):
@@ -216,8 +258,8 @@ def load_and_prep_prod_df(csvfile, dims, language, delim, prod_id, rel_date):
         df["RefYear"] = df["REF_DATE"].map(h.fix_ref_year).astype("string")  # need 4 digit year
         df["IndicatorThemeID"] = prod_id
         df["ReleaseIndicatorDate"] = rel_date
-        df["ReferencePeriod"] = df["RefYear"] + "-01-01"
-        df["ReferencePeriod"] = df["ReferencePeriod"].astype("datetime64[ns]")  # becomes Jan 1
+        df["ReferencePeriod"] = df["RefYear"] + "-01-01"  # becomes Jan 1
+        df["ReferencePeriod"] = df["ReferencePeriod"].astype("datetime64[ns]")
         df["Vector"] = df["Vector"].str.replace("v", "").astype("int32")  # remove v, make int
 
     return df
