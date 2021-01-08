@@ -104,15 +104,8 @@ class sqlDb(object):
                 retval.append(prod[0])
         return retval
 
-    def get_pid_indicators_as_df(self, product_id):
-        # return the indicators for the specified product_id as a pandas dataframe
-        query = "SELECT IndicatorId, IndicatorCode FROM gis.Indicator WHERE IndicatorThemeId = ?"
-        retval = pd.read_sql(query, self.connection, params=[product_id])
-        return retval
-
     def insert_dataframe_rows(self, df, table_name, schema_name):
         # insert dataframe (df) to the database for schema (schema_name) and table (table_name)
-        # Note: sqlalchemy fails silently if the table name doesn't exist. Make sure table names are valid.
         print("Inserting to " + table_name + "." + schema_name + "... ")
         ret_val = False
 
