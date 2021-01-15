@@ -36,7 +36,7 @@ class sqlDb(object):
         qry2 = "DELETE FROM gis.IndicatorMetaData WHERE IndicatorId IN (" + pid_subqry + ") "
         qry3 = "DELETE FROM gis.IndicatorValues WHERE IndicatorValueId IN (" \
                "SELECT IndicatorValueId FROM gis.GeographyReferenceForIndicator WHERE IndicatorId IN " \
-               "(" + pid_subqry + ")) OR IndicatorValueCode like '%" + pid + "%'"  # added 2nd clause to confluence code
+               "(" + pid_subqry + ")) "  # OR IndicatorValueCode like '%" + pid + "%'"  # added 2nd clause
         qry4 = "DELETE FROM gis.GeographyReferenceForIndicator WHERE IndicatorId in (" + pid_subqry + ") "
         qry5 = "DELETE FROM gis.GeographicLevelForIndicator WHERE IndicatorId in (" + pid_subqry + ") "
         qry6 = "DELETE FROM gis.Indicator WHERE IndicatorThemeId = ?"
@@ -65,6 +65,17 @@ class sqlDb(object):
         results = self.cursor.fetchall()
         if len(results) == 1:
             retval = results[0][0]
+        return retval
+
+    def get_dimensions_and_members_by_product(self, pid):
+        # return dimensions and members from gis.Dimensions and gis.DimensionValues as a pandas dataframe
+        query = "SELECT dv.DimensionValueId, dv.DimensionId, dv.Display_EN, dv.ValueDisplayOrder, " \
+                "dv.ValueDisplayParent, d.IndicatorThemeId, d.Dimension_EN, d.DisplayOrder " \
+                "FROM gis.DimensionValues as dv INNER JOIN gis.Dimensions as d " \
+                "ON dv.DimensionId = d.DimensionId " \
+                "WHERE d.IndicatorThemeId = " + pid + \
+                "ORDER BY DisplayOrder, ValueDisplayOrder"
+        retval = pd.read_sql(query, self.connection)
         return retval
 
     def get_geo_reference_ids(self):

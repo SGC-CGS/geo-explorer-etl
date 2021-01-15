@@ -8,15 +8,15 @@ import helpers as h  # helper functions
 import pathlib
 import scdb  # database class
 import scwds  # wds class
-import time
+
 
 # set up
 WORK_DIR = str(pathlib.Path(__file__).parent.absolute())  # current script path
 
 # TEST DATE: Oct 28, 2020 has 3 tables from db with updates (46100027, 46100053, 46100054)
-#   46100027 - 4,513,250 rows
-#   46100053 - 13,869,198 rows
-#   46100054 - 13,869,198 rows
+#   46100027 - 4,513,250 rows (5 dims)
+#   46100053 - 13,869,198 rows (6 dims)
+#   46100054 - 13,869,198 rows (6 dims)
 start_date = datetime.date(2020, 10, 27)  # y m d
 end_date = datetime.date(2020, 10, 28)
 
@@ -68,30 +68,38 @@ if __name__ == "__main__":
 
                     # delete product in database
                     if db.delete_product(pid):
-
+                        print("Script start: " + str(datetime.datetime.now()) + "\n")
                         # Get the product metadata
                         prod_metadata = wds.get_cube_metadata(pid)
                         dimensions = scwds.get_metadata_dimensions(prod_metadata, True)
                         release_date = scwds.get_metadata_release_date(prod_metadata)
 
-                        # put csv files into data frames and do prelim cleaning
+                        # Put csv files into data frames and do prelim cleaning
                         df_fr = dfh.load_and_prep_prod_df(pid_path["fr"]["CSVFile"], dimensions, "fr", ";", pid_str,
                                                           release_date)
                         df_en = dfh.load_and_prep_prod_df(pid_path["en"]["CSVFile"], dimensions, "en", ",", pid_str,
                                                           release_date)
 
+                        # Build and insert datasets for each table
+                        # Note data frames are deleted as soon as they are no longer needed to save memory
+
                         # Indicator
                         next_ind_id = db.get_last_indicator_id() + 1  # setup unique IDs
                         df_ind = dfh.build_indicator_df_start(df_en, df_fr)  # prep first half of df
-                        del df_fr  # drop french dataframe to save memory
+                        del df_fr
                         df_ind = dfh.build_indicator_df_end(df_ind, dimensions, next_ind_id)  # prep rest of df
-                        db.insert_dataframe_rows(df_ind, "Indicator", "gis")  # insert to db
-                        # keep the new IndicatorIds and codes for next set of table updates
-                        df_ind = df_ind.loc[:, ["IndicatorId", "IndicatorCode"]]
+
+                        # This data is needed for several other inserts, so create a subset of just the necessary
+                        # columns for the indicator insert so we can keep the rest.
+                        df_ind_subset = dfh.build_indicator_df_subset(df_ind)
+                        db.insert_dataframe_rows(df_ind_subset, "Indicator", "gis")
+                        del df_ind_subset
+                        # keep the new IndicatorIds and other required columns for next set of table updates
+                        df_ind = df_ind.loc[:, ["IndicatorId", "IndicatorCode", "UOM_EN", "UOM_FR", "UOM_ID"]]
 
                         # GeographicLevelforIndicator
-                        df_gli = dfh.build_geographic_level_for_indicator_df(df_en, df_ind)  # prep df
-                        db.insert_dataframe_rows(df_gli, "GeographicLevelForIndicator", "gis")  # insert to db
+                        df_gli = dfh.build_geographic_level_for_indicator_df(df_en, df_ind)
+                        db.insert_dataframe_rows(df_gli, "GeographicLevelForIndicator", "gis")
                         del df_gli
 
                         # get ids from gis.GeographyReference for next set of table updates
@@ -101,21 +109,34 @@ if __name__ == "__main__":
                         next_ind_val_id = db.get_last_indicator_value_id() + 1  # set unique IDs
                         df_ind_null = db.get_indicator_null_reason()  # codes from gis.IndicatorNullReason
                         df_ind_val = dfh.build_indicator_values_df(df_en, df_geo_ref, df_ind_null,
-                                                                   next_ind_val_id)  # prep df
-                        db.insert_dataframe_rows(df_ind_val, "IndicatorValues", "gis")  # insert to db
+                                                                   next_ind_val_id)
+                        db.insert_dataframe_rows(df_ind_val, "IndicatorValues", "gis")
                         # keep the new IndicatorValueIds for next table update
                         df_ind_val.drop(["VALUE", "NullReasonId"], axis=1, inplace=True)
                         del df_ind_null
 
                         # GeographyReferenceForIndicator
-                        df_gri = dfh.build_geography_reference_for_indicator_df(df_en, df_ind, df_geo_ref,
-                                                                                 df_ind_val)  # prep df
-                        db.insert_dataframe_rows(df_gri, "GeographyReferenceForIndicator", "gis")  # insert to db
+                        df_gri = dfh.build_geography_reference_for_indicator_df(df_en, df_ind, df_geo_ref, df_ind_val)
+                        db.insert_dataframe_rows(df_gri, "GeographyReferenceForIndicator", "gis")
                         del df_ind_val
+                        del df_geo_ref
                         del df_gri
 
+                        # IndicatorMetadata
+                        # TODO - CODE TO BUILD UNIQUE DIMENSION KEYS IS NOT FINISHED.
+                        # build dimension key dataset from dimensions/dimensionvalues tables
+                        df_dm = db.get_dimensions_and_members_by_product(pid_str)  # get dimensions and members from db
+
+                        df_dim_keys = dfh.build_dimension_keys(df_dm)
+                        del df_dm
+
+                        df_im = dfh.build_indicator_metadata_df(
+                            df_ind,
+                            h.get_product_defaults(pid_str)  # default metadata by product id
+                        )
+                        db.insert_dataframe_rows(df_im, "IndicatorMetaData", "gis")
+                        del df_im
                         del df_ind
-                        del df_geo_ref
                         del df_en
 
     # delete the objects
@@ -123,4 +144,3 @@ if __name__ == "__main__":
     wds = None
 
     print("\nScript end: " + str(datetime.datetime.now()))
-    print("Elapsed Time: " + str(time.process_time()) + " seconds.")

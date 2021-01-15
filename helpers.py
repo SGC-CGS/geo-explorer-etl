@@ -1,6 +1,7 @@
 # helper functions
 
 import datetime as dt
+import json
 import pandas as pd
 import zipfile as zf
 
@@ -41,6 +42,18 @@ def fix_ref_year(year_str):
         retval = 1900  # default - to help finding afterward
 
     return retval
+
+
+def get_product_defaults(pid):
+    # read json file and return any defaults to be set on product (pid) for indicator metadata
+    # examples: default breaks, colours
+    with open("product_defaults.json") as json_file:
+        prod_dict = json.load(json_file)
+        if pid in prod_dict:
+            prod_defaults = prod_dict[pid]
+        else:
+            prod_defaults = prod_dict["default"]
+        return prod_defaults
 
 
 def mem_usage(pandas_obj):

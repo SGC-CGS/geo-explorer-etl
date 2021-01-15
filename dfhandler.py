@@ -3,6 +3,7 @@
 import helpers as h  # helper functions
 import numpy as np
 import pandas as pd
+import re  # regular expressions
 
 
 def build_column_and_type_dict(dimensions, lang):
@@ -13,14 +14,48 @@ def build_column_and_type_dict(dimensions, lang):
     #   df returns all strings as object type by default
     #   category more efficient for string fields if there are < 50% unique values and no string operations are required
     if lang == "en":
-        cols = {"REF_DATE": "string", "DGUID": "string", "UOM": "category", "VECTOR": "string", "COORDINATE": "string",
-                "STATUS": "category", "SYMBOL": "string", "TERMINATED": "category", "VALUE": "float64"}
+        cols = {"REF_DATE": "string", "DGUID": "string", "UOM": "category", "UOM_ID": "int16", "VECTOR": "string",
+                "COORDINATE": "string", "STATUS": "category", "SYMBOL": "string", "VALUE": "float64"}
     else:
         cols = {"PÉRIODE DE RÉFÉRENCE": "string", "COORDONNÉES": "string", "UNITÉ DE MESURE": "category"}
 
     for dim in dimensions[lang]:
         cols[dim] = "string"
     return cols
+
+
+def build_dimension_keys(dmf):  # TODO - CODE TO BUILD DIMENSION KEYS IS NOT FINISHED.
+    # Build a dataframe of unique dimension keys for the product id (pid) from a dataset returned from
+    # gis.Dimensions and gis.DimensionValues (dmf).
+    # The unique keys are the ordered and concatenated index values of each member in gis.DimensionValues.
+    # There are no IndicatorIds, vectors, or coordinates in these tables, so we are figuring out the link to Indicator
+    # backward through reference periods and indicator names.
+    dic = {}
+
+    for index, row in dmf.iterrows():
+        dim_id = row["DimensionId"]
+        mem_id = row["DimensionValueId"]
+        if dim_id not in dic:
+            dic[dim_id] = {}  # create the dimension sub dict
+            dic[dim_id]["dim_name"] = row["Dimension_EN"]
+            dic[dim_id]["members"] = {}
+
+        if mem_id not in dic[dim_id]["members"]:
+            dic[dim_id]["members"][mem_id] = {}
+            # strips leading number/period/whitespace from member name (ex. "02. Resident owners only" removes "02. ")
+            dic[dim_id]["members"][mem_id]["mem_name"] = re.sub(r"^([^.]+\.)", "", row["Display_EN"]).lstrip()
+
+    # now you have a dictionary of dimensions and members
+    # we need a list of all Indicators and Dimension ID
+    # Flatten members in this format:
+    # 2018-Total, all property types-Total, all periods of construction-Total, all residency participation types-Number
+    # for dim, dim_info in dic.items():
+        # print("\nDim:", dim)  # date
+
+        # for member in dim_info:
+            # print(member + ':', dim_info[member])
+
+    return dic
 
 
 def build_dimension_ul(ref_year, indicator_name):
@@ -64,7 +99,7 @@ def build_geography_reference_for_indicator_df(edf, idf, gdf, ivdf):
     # Build the data frame for GeographicReferenceForIndicator based on dataframe of english csv file (edf),
     # GeographyReference ids (gdf), Indicator # codes and Ids that were just inserted to the db (idf), and
     # Indicator Values that were just added to the db (ivdf).
-    print("Building GeographicReferenceForIndicator table.")
+    print("Building GeographyReferenceForIndicator table.")
     df_gri = edf.loc[:, ["DGUID", "IndicatorCode", "ReferencePeriod"]]  # subset of full en dataset
     df_gri = pd.merge(df_gri, idf, on="IndicatorCode", how="left")  # join datasets
     df_gri["IndicatorValueCode"] = df_gri["DGUID"] + "." + df_gri["IndicatorCode"]  # combine DGUID and IndicatorCode
@@ -88,6 +123,7 @@ def build_geography_reference_for_indicator_df(edf, idf, gdf, ivdf):
     df_gri["GeographyReferenceId"] = df_gri["GeographyReferenceId"].astype("string").str[:25]
     df_gri["ReferencePeriod"] = df_gri["ReferencePeriod"].astype("datetime64[ns]")
 
+    print("Finished building GeographyReferenceForIndicator table.")
     return df_gri
 
 
@@ -135,14 +171,73 @@ def build_indicator_df_end(df, dims, next_id):
     df["ReleaseIndicatorDate"] = df["ReleaseIndicatorDate"].astype("datetime64[ns]")
     df["IndicatorCode"] = df["IndicatorCode"].str[:100]
 
-    # Keep only the columns needed for insert
-    df = df.loc[:, ["IndicatorId", "IndicatorName_EN", "IndicatorName_FR", "IndicatorThemeID",
-                    "ReleaseIndicatorDate", "ReferencePeriod", "IndicatorCode", "IndicatorDisplay_EN",
-                    "IndicatorDisplay_FR", "UOM_EN", "UOM_FR", "Vector", "IndicatorNameLong_EN",
-                    "IndicatorNameLong_FR"]]
-
     print("Finished building Indicator table.")
     return df
+
+
+def build_indicator_df_subset(idf):
+    # for the indicator dataframe (idf), return only those rows needed for database inserts
+    df = idf.loc[:, ["IndicatorId", "IndicatorName_EN", "IndicatorName_FR", "IndicatorThemeID",
+                         "ReleaseIndicatorDate", "ReferencePeriod", "IndicatorCode", "IndicatorDisplay_EN",
+                         "IndicatorDisplay_FR", "UOM_EN", "UOM_FR", "Vector", "IndicatorNameLong_EN",
+                         "IndicatorNameLong_FR"]]
+    return df
+
+
+def build_indicator_metadata_df(idf, prod_defaults):
+    # build the data frame for IndicatorMetadata using the indicator dataset (idf)
+    print("Building IndicatorMetaData table.")
+    df_im = idf.loc[:, ["IndicatorId", "UOM_EN", "UOM_FR", "UOM_ID"]]  # subset of full en dataset
+
+    # gis.Indicator columns that can be reused for gis.IndicatorMetaData
+    df_im["MetaDataId"] = df_im["IndicatorId"]  # duplicate column
+    df_im["DefaultRelatedChartId"] = df_im["IndicatorId"]  # duplicate column
+    df_im.rename(columns={"UOM_EN": "FieldAlias_EN", "UOM_FR": "FieldAlias_FR", "UOM_ID": "DataFormatId"},
+                 inplace=True)  # rename to match db
+
+    # set default metadata for product
+    df_im["DefaultBreaksAlgorithmId"] = prod_defaults["default_breaks_algorithm_id"]
+    df_im["DefaultBreaks"] = prod_defaults["default_breaks"]
+    df_im["PrimaryChartTypeId"] = prod_defaults["primary_chart_type_id"]
+    df_im["ColorTo"] = prod_defaults["color_to"]
+    df_im["ColorFrom"] = prod_defaults["color_from"]
+
+    # uom formats are inserted into the primary query
+    df_im["en_format"] = df_im.apply(lambda x: set_uom_format(x["DataFormatId"], "en"), axis=1)
+    df_im["fr_format"] = df_im.apply(lambda x: set_uom_format(x["DataFormatId"], "fr"), axis=1)
+
+    df_im["PrimaryQuery"] = "SELECT iv.value AS Value, CASE WHEN iv.value IS NULL THEN nr.symbol ELSE " + \
+                            df_im["en_format"] + " END AS FormattedValue_EN,  CASE WHEN iv.value IS NULL THEN " \
+                            "nr.symbol ELSE " + df_im["fr_format"] + " END AS FormattedValue_FR, " \
+                            "grfi.GeographyReferenceId, g.DisplayNameShort_EN, g.DisplayNameShort_FR, " \
+                            "g.DisplayNameLong_EN, g.DisplayNameLong_FR, g.ProvTerrName_EN, g.ProvTerrName_FR, " \
+                            "g.Shape, i.IndicatorName_EN, i.IndicatorName_FR, i.IndicatorId, i.IndicatorDisplay_EN, " \
+                            "i.IndicatorDisplay_FR, i.UOM_EN, i.UOM_FR, g.GeographicLevelId, gl.LevelName_EN, " \
+                            "gl.LevelName_FR, gl.LevelDescription_EN, gl.LevelDescription_FR, g.EntityName_EN, " \
+                            "g.EntityName_FR, nr.Symbol, nr.Description_EN as NullDescription_EN, nr.Description_FR " \
+                            "as NullDescription_FR FROM gis.geographyreference AS g INNER JOIN " \
+                            "gis.geographyreferenceforindicator AS grfi ON g.geographyreferenceid = " \
+                            "grfi.geographyreferenceid  INNER JOIN (select * from gis.indicator where " \
+                            "indicatorId = " + df_im["IndicatorId"].astype(str) + ") AS i ON grfi.indicatorid = " \
+                            "i.indicatorid  INNER JOIN gis.geographiclevel AS gl ON g.geographiclevelid = " \
+                            "gl.geographiclevelid  INNER JOIN gis.geographiclevelforindicator AS glfi  ON " \
+                            "i.indicatorid = glfi.indicatorid  AND gl.geographiclevelid = glfi.geographiclevelid " \
+                            "INNER JOIN gis.indicatorvalues AS iv  ON iv.indicatorvalueid = grfi.indicatorvalueid  " \
+                            "INNER JOIN gis.indicatortheme AS it ON i.indicatorthemeid = it.indicatorthemeid  " \
+                            "LEFT OUTER JOIN gis.indicatornullreason AS nr ON iv.nullreasonid = nr.nullreasonid"
+
+    df_im["DimensionUniqueKey"] = ""  # TODO - BUILD DIMENSION KEY
+
+    # set datatypes for db
+    # TODO - CONFIRM DATA TYPES ARE CORRECT FOR DB
+
+    # Order columns for insert
+    df_im = df_im.loc[:, ["MetaDataId", "IndicatorId", "FieldAlias_EN", "FieldAlias_FR", "DataFormatId",
+                          "DefaultBreaksAlgorithmId", "DefaultBreaks", "PrimaryChartTypeId", "PrimaryQuery",
+                          "ColorTo", "ColorFrom", "DimensionUniqueKey", "DefaultRelatedChartId"]]
+
+    print("Finished building IndicatorMetaData table.")
+    return df_im
 
 
 def build_indicator_values_df(edf, gdf, ndf, next_id):
@@ -263,3 +358,19 @@ def load_and_prep_prod_df(csvfile, dims, language, delim, prod_id, rel_date):
         df["Vector"] = df["Vector"].str.replace("v", "").astype("int32")  # remove v, make int
 
     return df
+
+
+def set_uom_format(uom_id, lang):
+    # returns format string for specified uom_id and language (lang)
+    loc_code = "en-US"
+    if lang == "fr":
+        loc_code = "fr-CA"
+
+    format_str = "Format(iv.value, 'N', '" + loc_code + "')"  # default
+    if uom_id == 223:
+        format_str = "Format(iv.value, 'N0', '" + loc_code + "')"
+    elif uom_id == 81:
+        format_str = "Format(iv.value, 'C0', '" + loc_code + "')"
+    elif uom_id == 239:
+        format_str = "Format(iv.value/100, 'P1', '" + loc_code + "')"
+    return format_str
