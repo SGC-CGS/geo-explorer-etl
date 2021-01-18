@@ -124,7 +124,6 @@ if __name__ == "__main__":
                         del df_gri
 
                         # IndicatorMetadata
-                        # TODO - CODE TO BUILD UNIQUE DIMENSION KEYS IS NOT FINISHED.
                         # build dimension key dataset from dimensions/dimensionvalues tables
                         df_dm = db.get_dimensions_and_members_by_product(pid_str)  # get dimensions and members from db
                         df_dim_keys = dfh.build_dimension_unique_keys(df_dm)  # build unique keys with indicator names

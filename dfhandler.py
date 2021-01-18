@@ -25,7 +25,7 @@ def build_column_and_type_dict(dimensions, lang):
     return cols
 
 
-def build_dimension_unique_keys(dmf):  # TODO - CODE TO BUILD DIMENSION KEYS IS NOT FINISHED.
+def build_dimension_unique_keys(dmf):
     # Build a dataframe of unique dimension keys for the product id (pid) from a dataset returned from
     # gis.Dimensions and gis.DimensionValues (dmf).
     # The unique keys are the ordered and concatenated index values of each member in gis.DimensionValues.
@@ -105,12 +105,10 @@ def build_geographic_level_for_indicator_df(edf, idf):
     # Ensure columns are in order needed for insert
     df_gli = df_gli.loc[:, ["IndicatorId", "GeographicLevelId"]]
 
-    # TODO: NOTE - Production database shows that a GeographicLevelId of "SSSS" is added to
-    #  gis.GeographicLevelForIndicator for every IndicatorId. These rows are apparently used for
-    #  the select drop down box on the web site. This part of the process is not in the PowerBI or
-    #  SSIS packages that were supplied. Need to confirm when these rows are added (i.e., is it
-    #  added manually with SQL statements after the PowerBI and SSIS packages are run?) and whether
-    #  this modification should be included here.
+    # every IndicatorID needs a row added with GeographicLevel = "SSSS" (for web display)
+    df_web_inds = df_gli.loc[:, ["IndicatorId"]].drop_duplicates(inplace=False)
+    df_web_inds["GeographicLevelId"] = "SSSS"
+    df_gli = df_gli.append(df_web_inds)
 
     print("Finished building GeohraphicLevelForIndicator table.")
     return df_gli
@@ -131,9 +129,6 @@ def build_geography_reference_for_indicator_df(edf, idf, gdf, ivdf):
     df_gri.dropna(subset=["GeographyReferenceId", "DGUID"], inplace=True)  # drop rows with empty ids
     df_gri.drop(["GeographyReferenceId"], axis=1, inplace=True)  # drop ref column used for merge
     df_gri.rename(columns={"DGUID": "GeographyReferenceId"}, inplace=True)  # rename to match db
-    # TODO: The step aboves removes any rows that do not have a matching DGUID in the GeographyReference table or have
-    #  an empty DGUID. This step exists in the PowerBI process and results in many IndicatorValues being removed
-    #  from the dataset. It is not currently clear how the GeographyReference table gets updated with new DGUIDs.
 
     df_gri = pd.merge(df_gri, ivdf, on="IndicatorValueCode", how="left")  # join to IndicatorValues for id
     df_gri.drop(["IndicatorCode", "IndicatorValueCode"], axis=1, inplace=True)
@@ -282,9 +277,6 @@ def build_indicator_values_df(edf, gdf, ndf, next_id):
 
     df_iv.dropna(subset=["GeographyReferenceId"], inplace=True)  # drop empty ids
     df_iv.drop(["GeographyReferenceId"], axis=1, inplace=True)
-    # TODO: The step aboves removes any rows that do not have a matching DGUID in the GeographyReference table.
-    #  This step exists in the PowerBI process and results in many IndicatorValues being removed from the dataset.
-    #  It is not currently clear how the GeographyReference table gets updated with new DGUIDs.
 
     df_iv["IndicatorValueCode"] = df_iv["DGUID"] + "." + df_iv["IndicatorCode"]  # combine DGUID and IndicatorCode
     df_iv.drop(["DGUID", "IndicatorCode"], axis=1, inplace=True)
