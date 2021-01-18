@@ -252,8 +252,14 @@ def build_indicator_metadata_df(idf, prod_defaults, dkdf):
                             "INNER JOIN gis.indicatortheme AS it ON i.indicatorthemeid = it.indicatorthemeid  " \
                             "LEFT OUTER JOIN gis.indicatornullreason AS nr ON iv.nullreasonid = nr.nullreasonid"
 
-    # set datatypes for db
-    # TODO - CONFIRM DATA TYPES ARE CORRECT FOR DB
+    # set datatypes/lengths for db
+    df_im["FieldAlias_EN"] = df_im["FieldAlias_EN"].astype("string").str[:600]
+    df_im["FieldAlias_FR"] = df_im["FieldAlias_FR"].astype("string").str[:600]
+    df_im["DimensionUniqueKey"] = df_im["DimensionUniqueKey"].astype("string").str[:50]
+    df_im["ColorTo"] = df_im["ColorTo"].astype("string").str[:35]
+    df_im["ColorFrom"] = df_im["ColorFrom"].astype("string").str[:35]
+    df_im["PrimaryQuery"] = df_im["PrimaryQuery"].astype("string").str[:4000]
+    print(df_im.dtypes)
 
     # Order columns for insert
     df_im = df_im.loc[:, ["MetaDataId", "IndicatorId", "FieldAlias_EN", "FieldAlias_FR", "DataFormatId",
