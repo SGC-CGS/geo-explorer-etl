@@ -68,7 +68,7 @@ if __name__ == "__main__":
 
                     # delete product in database
                     if db.delete_product(pid):
-                        print("Script start: " + str(datetime.datetime.now()) + "\n")
+
                         # Get the product metadata
                         prod_metadata = wds.get_cube_metadata(pid)
                         dimensions = scwds.get_metadata_dimensions(prod_metadata, True)
@@ -95,7 +95,8 @@ if __name__ == "__main__":
                         db.insert_dataframe_rows(df_ind_subset, "Indicator", "gis")
                         del df_ind_subset
                         # keep the new IndicatorIds and other required columns for next set of table updates
-                        df_ind = df_ind.loc[:, ["IndicatorId", "IndicatorCode", "UOM_EN", "UOM_FR", "UOM_ID"]]
+                        df_ind = df_ind.loc[:, ["IndicatorId", "IndicatorCode", "IndicatorFmt",
+                                                "UOM_EN", "UOM_FR", "UOM_ID"]]
 
                         # GeographicLevelforIndicator
                         df_gli = dfh.build_geographic_level_for_indicator_df(df_en, df_ind)
@@ -126,13 +127,13 @@ if __name__ == "__main__":
                         # TODO - CODE TO BUILD UNIQUE DIMENSION KEYS IS NOT FINISHED.
                         # build dimension key dataset from dimensions/dimensionvalues tables
                         df_dm = db.get_dimensions_and_members_by_product(pid_str)  # get dimensions and members from db
-
-                        df_dim_keys = dfh.build_dimension_keys(df_dm)
+                        df_dim_keys = dfh.build_dimension_unique_keys(df_dm)  # build unique keys with indicator names
                         del df_dm
 
                         df_im = dfh.build_indicator_metadata_df(
                             df_ind,
-                            h.get_product_defaults(pid_str)  # default metadata by product id
+                            h.get_product_defaults(pid_str),  # default metadata by product id
+                            df_dim_keys
                         )
                         db.insert_dataframe_rows(df_im, "IndicatorMetaData", "gis")
                         del df_im

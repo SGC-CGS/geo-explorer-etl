@@ -1,6 +1,7 @@
 # data frame handling
 
 import helpers as h  # helper functions
+import itertools as it  # for iterators
 import numpy as np
 import pandas as pd
 import re  # regular expressions
@@ -24,38 +25,58 @@ def build_column_and_type_dict(dimensions, lang):
     return cols
 
 
-def build_dimension_keys(dmf):  # TODO - CODE TO BUILD DIMENSION KEYS IS NOT FINISHED.
+def build_dimension_unique_keys(dmf):  # TODO - CODE TO BUILD DIMENSION KEYS IS NOT FINISHED.
     # Build a dataframe of unique dimension keys for the product id (pid) from a dataset returned from
     # gis.Dimensions and gis.DimensionValues (dmf).
     # The unique keys are the ordered and concatenated index values of each member in gis.DimensionValues.
     # There are no IndicatorIds, vectors, or coordinates in these tables, so we are figuring out the link to Indicator
     # backward through reference periods and indicator names.
-    dic = {}
+    dim_mem_names = {}
+    dim_mem_ids = {}
 
+    # build dictionaries of member ids and member names
     for index, row in dmf.iterrows():
         dim_id = row["DimensionId"]
         mem_id = row["DimensionValueId"]
-        if dim_id not in dic:
-            dic[dim_id] = {}  # create the dimension sub dict
-            dic[dim_id]["dim_name"] = row["Dimension_EN"]
-            dic[dim_id]["members"] = {}
+        # strips leading number/period/whitespace from member name (ex. "02. Resident owners only" removes "02. ")
+        mem_name = re.sub(r"^([^.]+\.)", "", row["Display_EN"]).lstrip()
 
-        if mem_id not in dic[dim_id]["members"]:
-            dic[dim_id]["members"][mem_id] = {}
-            # strips leading number/period/whitespace from member name (ex. "02. Resident owners only" removes "02. ")
-            dic[dim_id]["members"][mem_id]["mem_name"] = re.sub(r"^([^.]+\.)", "", row["Display_EN"]).lstrip()
+        if dim_id not in dim_mem_names:
+            dim_mem_names[dim_id] = []
+        dim_mem_names[dim_id].append(mem_name)
 
-    # now you have a dictionary of dimensions and members
-    # we need a list of all Indicators and Dimension ID
-    # Flatten members in this format:
-    # 2018-Total, all property types-Total, all periods of construction-Total, all residency participation types-Number
-    # for dim, dim_info in dic.items():
-        # print("\nDim:", dim)  # date
+        if dim_id not in dim_mem_ids:
+            dim_mem_ids[dim_id] = []
+        dim_mem_ids[dim_id].append(mem_id)
 
-        # for member in dim_info:
-            # print(member + ':', dim_info[member])
+    mem_names = build_dimension_member_combos(dim_mem_names)
+    mem_ids = build_dimension_member_combos(dim_mem_ids)
+    keys_df = False
+    if len(mem_names) == len(mem_ids):
+        # can combine the two lists b/c they are in the same order by dimension
+        keys_df = pd.DataFrame({"IndicatorFmt": mem_names, "DimensionUniqueKey": mem_ids})
 
-    return dic
+    return keys_df
+
+
+def build_dimension_member_combos(dim_members):
+    # find all possible combinations of dimension members in dictionary(dim_members)
+    # dictionary examples (with dimensions numbered 1-3):
+    # {1: ['A1'], 2: ['B1', 'B2'], 3: ['C1', 'C2']} (for member names)
+    # {1: [10], 2: [20, 30], 3: [40, 50]} (for member ids)
+    # returns list member ids or member names separates by "-"
+    # ex. if dimensions A-->C exist with 2 members each. This should result in 1x2x2=4 possible combinations
+    #   A1-B1-C1 10-20-40
+    #   A1-B1-C2 10-20-50
+    #   A1-B2-C1 10-30-40
+    #   A1-B2-C2 10-30-50
+
+    member_combinations = list(it.product(*(dim_members[mem] for mem in dim_members)))  # build all combos to a list
+    mem_list = []
+    for member_tup in member_combinations:
+        mem_list.append('-'.join(map(str, member_tup)))  # turn into list of strings w/ "-" separator
+
+    return mem_list
 
 
 def build_dimension_ul(ref_year, indicator_name):
@@ -168,6 +189,10 @@ def build_indicator_df_end(df, dims, next_id):
         df["UOM_" + ln] = df["UOM_" + ln].astype("string").str[:50]
         df["IndicatorNameLong_" + ln] = df["IndicatorNameLong_" + ln].str[:1000]
 
+    # build field needed later for IndicatorMetaData DimensionUniqueKey matching
+    df["IndicatorFmt"] = df["RefYear"] + "-" + df["IndicatorName_EN"].str.replace(" _ ", "-")
+
+    # set datatypes for db
     df["ReleaseIndicatorDate"] = df["ReleaseIndicatorDate"].astype("datetime64[ns]")
     df["IndicatorCode"] = df["IndicatorCode"].str[:100]
 
@@ -184,10 +209,16 @@ def build_indicator_df_subset(idf):
     return df
 
 
-def build_indicator_metadata_df(idf, prod_defaults):
-    # build the data frame for IndicatorMetadata using the indicator dataset (idf)
+def build_indicator_metadata_df(idf, prod_defaults, dkdf):
+    # build the data frame for IndicatorMetadata using the indicator dataset (idf),
+    # product defaults (prod_defaults) and unique dimension keys (dkdf)
+
     print("Building IndicatorMetaData table.")
-    df_im = idf.loc[:, ["IndicatorId", "UOM_EN", "UOM_FR", "UOM_ID"]]  # subset of full en dataset
+
+    # formatted indicator names in idf can merged with unique dimension keys data frame
+    idf = pd.merge(idf, dkdf, on="IndicatorFmt", how="left")
+    check_null_dimension_unique_keys(idf)  # notify user of any missing unique dimension keys
+    df_im = idf.loc[:, ["IndicatorId", "UOM_EN", "UOM_FR", "UOM_ID", "DimensionUniqueKey"]]  # subset
 
     # gis.Indicator columns that can be reused for gis.IndicatorMetaData
     df_im["MetaDataId"] = df_im["IndicatorId"]  # duplicate column
@@ -225,8 +256,6 @@ def build_indicator_metadata_df(idf, prod_defaults):
                             "INNER JOIN gis.indicatorvalues AS iv  ON iv.indicatorvalueid = grfi.indicatorvalueid  " \
                             "INNER JOIN gis.indicatortheme AS it ON i.indicatorthemeid = it.indicatorthemeid  " \
                             "LEFT OUTER JOIN gis.indicatornullreason AS nr ON iv.nullreasonid = nr.nullreasonid"
-
-    df_im["DimensionUniqueKey"] = ""  # TODO - BUILD DIMENSION KEY
 
     # set datatypes for db
     # TODO - CONFIRM DATA TYPES ARE CORRECT FOR DB
@@ -272,6 +301,16 @@ def build_indicator_values_df(edf, gdf, ndf, next_id):
 
     print("Finished building IndicatorValues table.")
     return df_iv
+
+
+def check_null_dimension_unique_keys(df):
+    # notify user if there are any missing DimensionUniqueKeys in the df
+    missing_keys_df = df[df["DimensionUniqueKey"].isnull()]
+    if missing_keys_df.shape[0] > 0:
+        print("***WARNING***\nDimensionUniqueKey could not be matched for the following indicators:")
+        with pd.option_context('display.max_rows', None):
+            print(missing_keys_df)
+    print("*************")
 
 
 def check_null_geography_reference(df):
