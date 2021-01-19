@@ -1,6 +1,12 @@
 # WDS class
 from datetime import datetime
+import logging
 import requests
+
+
+# set up logger if available
+log = logging.getLogger("etl_log")
+log.addHandler(logging.NullHandler())
 
 
 def get_metadata_dimensions(metadata, ignore_geo):
@@ -15,7 +21,7 @@ def get_metadata_dimensions(metadata, ignore_geo):
                 dim["en"].append(dimension["dimensionNameEn"])
                 dim["fr"].append(dimension["dimensionNameFr"])
     else:
-        print("Could not find any dimensions in the metadata.")
+        log.warning("Could not find any dimensions in the metadata.")
     return dim
 
 
@@ -26,7 +32,7 @@ def get_metadata_release_date(metadata):
     if "releaseTime" in metadata:
         retval = metadata["releaseTime"]
     else:
-        print("Could not release date/time in the metadata. Setting to current.")
+        log.warning("Could not release date/time in the metadata. Setting to current.")
     return retval
 
 
@@ -36,10 +42,10 @@ def write_file(filename, content, flags):
         with open(filename, flags) as f:
             f.write(content)
     except IOError as e:
-        print("Failed saving to " + filename)
-        print("Error: File could not be written to disk. \n" + str(e))
+        log.warning("Failed saving to " + filename)
+        log.warning("Error: File could not be written to disk. \n" + str(e))
     else:
-        print("File saved to " + filename)
+        log.info("File saved to " + filename)
         retval = True
     return retval
 
@@ -71,8 +77,7 @@ class serviceWds(object):
         if r.status_code == requests.codes.ok:
             self.last_http_req_status = True
         else:
-            print("Could not access WDS because of error: " + str(r.status_code))
-            print("See detailed error message below.\n")
+            log.warning("Could not access WDS because of error: " + str(r.status_code))
             r.raise_for_status()
             self.last_http_req_status = False
         return
@@ -92,7 +97,7 @@ class serviceWds(object):
         # submits WDS request, returns list of product ids for date
         # str_date - YYYY-MM-DD
         url = self.wds_url + "getChangedCubeList" + "/" + str_date
-        print("Accessing " + url + "...")
+        log.info("Accessing " + url)
         r = requests.get(url)
         self.check_http_request_status(r)
 
@@ -100,8 +105,8 @@ class serviceWds(object):
         if self.last_http_req_status:
             resp = r.json()
             if resp["status"] != "SUCCESS":
-                print("Changed cube list could not be retrieved. WDS returned: "
-                      + str(resp["status"]) + " for Date " + str_date)
+                log.warning("Changed cube list could not be retrieved. WDS returned: " + str(resp["status"]) +
+                            " for Date " + str_date)
             else:
                 prod_list = []
                 for row in resp["object"]:
@@ -113,7 +118,7 @@ class serviceWds(object):
     def get_code_sets(self):
         # submits WDS request, returns list of code sets
         url = self.wds_url + "getCodeSets"
-        print("Retrieving code sets from " + url + "...\n")
+        log.info("Retrieving code sets from " + url)
         r = requests.get(url)
         self.check_http_request_status(r)
 
@@ -121,7 +126,7 @@ class serviceWds(object):
         if self.last_http_req_status:
             resp = r.json()
             if resp["status"] != "SUCCESS":
-                print("Code set list could not be retrieved. WDS returned: " + str(resp["status"]))
+                log.warning("Code set list could not be retrieved. WDS returned: " + str(resp["status"]))
             else:
                 for set_type in resp["object"]:
                     if set_type == "scalar":
@@ -153,7 +158,7 @@ class serviceWds(object):
         # submits WDS request, returns cube metadata for 8 digit product_id
         url = self.wds_url + "getCubeMetadata"
         post_vars = [{"productId": int(product_id)}]
-        print("Retrieving " + str(product_id) + " metadata from " + url + "...\n")
+        log.info("Retrieving " + str(product_id) + " metadata from " + url)
         r = requests.post(url, json=post_vars)
         self.check_http_request_status(r)
 
@@ -162,8 +167,8 @@ class serviceWds(object):
             resp = r.json()
 
             if resp[0]["status"] != "SUCCESS":
-                print("Cube metadata could not be retrieved. WDS returned: "
-                      + str(resp["status"]) + " for product " + str(product_id))
+                log.warning("Cube metadata could not be retrieved. WDS returned: " + str(resp["status"]) +
+                            " for product " + str(product_id))
             else:
                 retval = resp[0]["object"]
 
@@ -172,7 +177,7 @@ class serviceWds(object):
     def get_delta_file(self, rel_date, file_path):
         # download delta file for relase date(rel_date) and save to file_path
         delta_link = self.delta_url + str(rel_date) + ".zip"
-        print("Downloading Delta File: " + delta_link)
+        log.info("Downloading Delta File: " + delta_link)
         dl_d = requests.get(delta_link)
         self.check_http_request_status(dl_d)
 
@@ -181,7 +186,7 @@ class serviceWds(object):
             if write_file(file_path, dl_d.content, "wb"):
                 retval = True
         else:
-            print("Delta file could not be downloaded.")
+            log.warning("Delta file could not be downloaded.")
         return retval
 
     def get_full_table_download(self, product_id, lang_code, file_path):
@@ -190,7 +195,7 @@ class serviceWds(object):
         # lang_code - language code "en" or "fr"
         # file_path - location to save the file
         url = self.wds_url + "getFullTableDownloadCSV/" + str(product_id) + "/" + lang_code
-        print("Retrieving download link from " + url + "...")
+        log.info("Retrieving download link from " + url)
         r = requests.get(url)
         self.check_http_request_status(r)
 
@@ -199,15 +204,15 @@ class serviceWds(object):
             resp = r.json()
 
             if resp["status"] != "SUCCESS":
-                print("Download link could not be retrieved. WDS returned: " + str(resp["status"])
-                      + " for product " + str(product_id) + " " + lang_code)
+                log.warning("Download link could not be retrieved. WDS returned: " + str(resp["status"]) +
+                            " for product " + str(product_id) + " " + lang_code)
             else:
-                print("Downloading file from " + str(resp["object"]))
+                log.info("Downloading file from " + str(resp["object"]) + " " + str(datetime.now()))
                 dl_r = requests.get(resp["object"])  # wds returns a link to the zip file, download it
                 self.check_http_request_status(dl_r)
                 if self.last_http_req_status:
                     if write_file(file_path, dl_r.content, "wb"):
                         retval = True
                 else:
-                    print("The file could not be downloaded.")
+                    log.warning("The file could not be downloaded.")
         return retval

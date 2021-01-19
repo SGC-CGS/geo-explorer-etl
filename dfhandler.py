@@ -2,9 +2,15 @@
 
 import helpers as h  # helper functions
 import itertools as it  # for iterators
+import logging
 import numpy as np
 import pandas as pd
 import re  # regular expressions
+
+
+# set up logger if available
+log = logging.getLogger("etl_log")
+log.addHandler(logging.NullHandler())
 
 
 def build_column_and_type_dict(dimensions, lang):
@@ -90,7 +96,7 @@ def build_geographic_level_for_indicator_df(edf, idf):
     # build the data frame for GeographicLevelForIndicator
     # based on dataframe of english csv file (edf) and dataframe of Indicator
     # codes and Ids that were just inserted to the db (idf).
-    print("Building GeographicLevelForIndicator table.")
+    log.info("Building GeographicLevelForIndicator table.")
     df_gli = edf.loc[:, ["DGUID", "IndicatorCode"]]  # subset of full en dataset
     df_gli["DGUID"] = df_gli["DGUID"].str[4:9]  # extract geo level id from DGUID
     df_gli.rename(columns={"DGUID": "GeographicLevelId"}, inplace=True)  # rename to match db
@@ -110,7 +116,7 @@ def build_geographic_level_for_indicator_df(edf, idf):
     df_web_inds["GeographicLevelId"] = "SSSS"
     df_gli = df_gli.append(df_web_inds)
 
-    print("Finished building GeohraphicLevelForIndicator table.")
+    log.info("Finished building GeohraphicLevelForIndicator table.")
     return df_gli
 
 
@@ -118,7 +124,7 @@ def build_geography_reference_for_indicator_df(edf, idf, gdf, ivdf):
     # Build the data frame for GeographicReferenceForIndicator based on dataframe of english csv file (edf),
     # GeographyReference ids (gdf), Indicator # codes and Ids that were just inserted to the db (idf), and
     # Indicator Values that were just added to the db (ivdf).
-    print("Building GeographyReferenceForIndicator table.")
+    log.info("Building GeographyReferenceForIndicator table.")
     df_gri = edf.loc[:, ["DGUID", "IndicatorCode", "ReferencePeriod"]]  # subset of full en dataset
     df_gri = pd.merge(df_gri, idf, on="IndicatorCode", how="left")  # join datasets
     df_gri["IndicatorValueCode"] = df_gri["DGUID"] + "." + df_gri["IndicatorCode"]  # combine DGUID and IndicatorCode
@@ -139,7 +145,7 @@ def build_geography_reference_for_indicator_df(edf, idf, gdf, ivdf):
     df_gri["GeographyReferenceId"] = df_gri["GeographyReferenceId"].astype("string").str[:25]
     df_gri["ReferencePeriod"] = df_gri["ReferencePeriod"].astype("datetime64[ns]")
 
-    print("Finished building GeographyReferenceForIndicator table.")
+    log.info("Finished building GeographyReferenceForIndicator table.")
     return df_gri
 
 
@@ -156,7 +162,7 @@ def build_indicator_df_start(edf, fdf):
     # fdf --> french dataframe
     # drop duplicte indicator codes from english dataframe
     # merge with french and return the merged df
-    print("Building Indicator Table...")
+    log.info("\nBuilding Indicator Table.")
     new_df = pd.merge(
         edf.drop_duplicates(subset=["IndicatorCode"], inplace=False),
         fdf, on="IndicatorCode"
@@ -191,7 +197,7 @@ def build_indicator_df_end(df, dims, next_id):
     df["ReleaseIndicatorDate"] = df["ReleaseIndicatorDate"].astype("datetime64[ns]")
     df["IndicatorCode"] = df["IndicatorCode"].str[:100]
 
-    print("Finished building Indicator table.")
+    log.info("Finished building Indicator table.")
     return df
 
 
@@ -208,7 +214,7 @@ def build_indicator_metadata_df(idf, prod_defaults, dkdf):
     # build the data frame for IndicatorMetadata using the indicator dataset (idf),
     # product defaults (prod_defaults) and unique dimension keys (dkdf)
 
-    print("Building IndicatorMetaData table.")
+    log.info("Building IndicatorMetaData table.")
 
     # formatted indicator names in idf can merged with unique dimension keys data frame
     idf = pd.merge(idf, dkdf, on="IndicatorFmt", how="left")
@@ -259,14 +265,13 @@ def build_indicator_metadata_df(idf, prod_defaults, dkdf):
     df_im["ColorTo"] = df_im["ColorTo"].astype("string").str[:35]
     df_im["ColorFrom"] = df_im["ColorFrom"].astype("string").str[:35]
     df_im["PrimaryQuery"] = df_im["PrimaryQuery"].astype("string").str[:4000]
-    print(df_im.dtypes)
 
     # Order columns for insert
     df_im = df_im.loc[:, ["MetaDataId", "IndicatorId", "FieldAlias_EN", "FieldAlias_FR", "DataFormatId",
                           "DefaultBreaksAlgorithmId", "DefaultBreaks", "PrimaryChartTypeId", "PrimaryQuery",
                           "ColorTo", "ColorFrom", "DimensionUniqueKey", "DefaultRelatedChartId"]]
 
-    print("Finished building IndicatorMetaData table.")
+    log.info("Finished building IndicatorMetaData table.")
     return df_im
 
 
@@ -275,7 +280,7 @@ def build_indicator_values_df(edf, gdf, ndf, next_id):
     # based on dataframe of english csv file (edf), GeographyReference ids (gdf), and NullReason ids (ndf).
     # populate indicator value ids starting from next_id.
 
-    print("Building IndicatorValues table.")
+    log.info("Building IndicatorValues table.")
     df_iv = edf.loc[:, ["DGUID", "IndicatorCode", "STATUS", "VALUE"]]  # subset of full en dataset
     df_iv["IndicatorValueId"] = create_id_series(edf, next_id)  # populate IDs
     df_iv = pd.merge(df_iv, gdf, left_on="DGUID", right_on="GeographyReferenceId", how="left")  # join to geoRef for id
@@ -297,7 +302,7 @@ def build_indicator_values_df(edf, gdf, ndf, next_id):
     # Keep only the columns needed for insert
     df_iv = df_iv.loc[:, ["IndicatorValueId", "VALUE", "NullReasonId", "IndicatorValueCode"]]
 
-    print("Finished building IndicatorValues table.")
+    log.info("Finished building IndicatorValues table.")
     return df_iv
 
 
@@ -305,21 +310,22 @@ def check_null_dimension_unique_keys(df):
     # notify user if there are any missing DimensionUniqueKeys in the df
     missing_keys_df = df[df["DimensionUniqueKey"].isnull()]
     if missing_keys_df.shape[0] > 0:
-        print("***WARNING***\nDimensionUniqueKey could not be matched for the following indicators:")
+        log.warning("***WARNING***\nDimensionUniqueKey could not be matched for the following indicators:")
         with pd.option_context('display.max_rows', None):
-            print(missing_keys_df)
-    print("*************")
+            log.warning(missing_keys_df)
+        log.warning("*************\n")
+    return
 
 
 def check_null_geography_reference(df):
     # alert user w/ DGUID if any "GeographyReferenceId" in df has nulls
     df_null_gr = df[df["GeographyReferenceId"].isna()].loc[:, ["DGUID"]].drop_duplicates(inplace=False)
     if df_null_gr.shape[0] > 0:
-        print("***WARNING***\nThe following DGUIDs were not found in gis.GeographyReference and cannot be added "
-              "to the database.\nAny values other than <NA> should be investigated.")
+        log.warning("***WARNING***\nThe following DGUIDs were not found in gis.GeographyReference and cannot be added "
+                    "to the database.\nAny values other than <NA> should be investigated.")
         with pd.option_context('display.max_rows', None):
-            print(df_null_gr["DGUID"])  # if the DGUID is also <NA>, then there is no problem
-        print("*************")
+            log.warning(df_null_gr["DGUID"].to_string(index=False))  # if the DGUID is <NA>, then there is no problem
+        log.warning("*************\n")
     return
 
 
@@ -347,7 +353,7 @@ def convert_csv_to_df(csv_file_name, delim, cols):
     # cols = dict of columns and data types colname:coltype
     # return as pandas dataframe
     prod_rows = []
-    print("Reading file to dataframe: " + csv_file_name + "\n")
+    log.info("Reading file to dataframe: " + csv_file_name)
 
     for chunk in pd.read_csv(csv_file_name, chunksize=10000, sep=delim, usecols=list(cols.keys()), dtype=cols):
         prod_rows.append(chunk)

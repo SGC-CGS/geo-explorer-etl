@@ -1,9 +1,14 @@
 # Database class
-import urllib.parse
+import logging
 import pandas as pd
 import pyodbc
+import urllib.parse
 from sqlalchemy import create_engine
 from sqlalchemy import exc
+
+# set up logger if available
+log = logging.getLogger("etl_log")
+log.addHandler(logging.NullHandler())
 
 
 # noinspection SpellCheckingInspection
@@ -15,13 +20,13 @@ class sqlDb(object):
         self.database = database
         conn_string = "Driver={" + self.driver + "};Server=" + self.server + ";Trusted_Connection=yes;Database=" + \
                       self.database + ";"
-        print("Connecting to DB: " + conn_string)
+        log.info("Connecting to DB: " + conn_string)
         self.connection = pyodbc.connect(conn_string, autocommit=False)
         self.cursor = self.connection.cursor()
 
         # sql alchemy engine for bulk inserts
         sa_params = urllib.parse.quote(conn_string)
-        print("Setting up SQL Alchemy engine: " + sa_params)
+        log.info("Setting up SQL Alchemy engine: " + sa_params)
         self.engine = create_engine("mssql+pyodbc:///?odbc_connect=%s" % sa_params, fast_executemany=True)
 
     def delete_product(self, product_id):
@@ -29,8 +34,8 @@ class sqlDb(object):
         # Note: We are not deleting the data from Dimensions, DimensionValues, or IndicatorTheme
         retval = False
         pid = str(product_id)
-        print("\nDeleting product " + pid + " from database...")
-        print("Note: Data will NOT be deleted from Dimensions, DimensionValues, or IndicatorTheme.")
+        log.info("\nDeleting product " + pid + " from database.")
+        log.info("Note: Data will NOT be deleted from Dimensions, DimensionValues, or IndicatorTheme.")
         pid_subqry = "SELECT IndicatorId FROM gis.Indicator WHERE IndicatorThemeId = ? "
         qry1 = "DELETE FROM gis.RelatedCharts WHERE RelatedChartId IN (" + pid_subqry + ") "
         qry2 = "DELETE FROM gis.IndicatorMetaData WHERE IndicatorId IN (" + pid_subqry + ") "
@@ -50,12 +55,12 @@ class sqlDb(object):
             self.cursor.execute(qry6, pid)
         except pyodbc.Error as err:
             self.cursor.rollback()
-            print("Could not delete product from database. See detailed message below:")
-            print(str(err))
+            log.error("Could not delete product from database. See detailed message below:")
+            log.error(str(err))
         else:
             self.cursor.commit()
             retval = True
-            print("Successfully deleted product.")
+            log.info("Successfully deleted product.")
         return retval
 
     def execute_simple_select_query(self, query):
@@ -117,23 +122,25 @@ class sqlDb(object):
 
     def insert_dataframe_rows(self, df, table_name, schema_name):
         # insert dataframe (df) to the database for schema (schema_name) and table (table_name)
-        print("Inserting to " + table_name + "." + schema_name + "... ")
+        log.info("Inserting to " + table_name + "." + schema_name + "... ")
         ret_val = False
 
         try:
             df.to_sql(name=table_name, con=self.engine, schema=schema_name, if_exists="append", index=False,
                       chunksize=10000)  # make sure to use default method=None
         except (pyodbc.Error, exc.SQLAlchemyError) as err:
-            print("Could not insert to database for table: " + schema_name + "." + table_name +
+            log.warning("Could not insert to database for table: " + schema_name + "." + table_name +
                                                              ". See detailed message below:")
-            print(str(err) + "\n")
+            log.warning(str(err) + "\n")
         else:
             if df.shape[0] == 0:
                 # try to catch some of the possible silent db fails here.
-                raise Exception("OTHER DB ERROR: No records were inserted to " + schema_name + "." + table_name +
-                      " \nThis may indicate a problem with the data. Verify data before running this script again.")
+                err_msg = "OTHER DB ERROR: No records were inserted to " + schema_name + "." + table_name + \
+                          " \nThis may indicate a problem with the data. Verify data before running this script again."
+                log.error(err_msg)
+                raise Exception(err_msg)
             else:
-                print("Inserted " + str(df.shape[0]) + " records.\n")
+                log.info("Inserted " + str(df.shape[0]) + " records.\n")
                 ret_val = True
 
         return ret_val

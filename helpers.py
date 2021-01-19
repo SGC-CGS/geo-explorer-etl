@@ -2,8 +2,14 @@
 
 import datetime as dt
 import json
+import logging
 import pandas as pd
 import zipfile as zf
+
+
+# set up logger if available
+log = logging.getLogger("etl_log")
+log.addHandler(logging.NullHandler())
 
 
 def convert_ref_year_to_date(ref_per):
@@ -38,7 +44,7 @@ def fix_ref_year(year_str):
     elif ln == 9:  # ex. 2017/2018
         retval = year_str[-4:]
     else:
-        print("Invalid Reference Year: " + year_str)
+        log.warning("Invalid Reference Year: " + year_str)
         retval = 1900  # default - to help finding afterward
 
     return retval
@@ -66,7 +72,7 @@ def mem_usage(pandas_obj):
 
 
 def unzip_file(source_file, target_path):
-    print("Extracting " + source_file + "...\n")
+    log.info("Extracting " + source_file + ": " + str(dt.datetime.now()))
     retval = False
 
     if zf.is_zipfile(source_file):
@@ -74,13 +80,13 @@ def unzip_file(source_file, target_path):
             with zf.ZipFile(source_file, "r") as zip_obj:
                 zip_obj.printdir()
                 zip_obj.extractall(target_path)
-                print("\nFile extracted.")
+                log.info("\nFile extracted.")
                 retval = True
         except zf.BadZipFile:
-            print("\nERROR: Zip file is corrupted.")
+            log.warning("\nERROR: Zip file is corrupted.")
         except FileNotFoundError:
-            print("\nERROR: Zip file does not exist.")
+            log.warning("\nERROR: Zip file does not exist.")
     else:
-        print("\nERROR: Not a valid zip file: " + source_file)
+        log.warning("\nERROR: Not a valid zip file: " + source_file)
 
     return retval
