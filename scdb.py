@@ -123,15 +123,15 @@ class sqlDb(object):
     def insert_dataframe_rows(self, df, table_name, schema_name):
         # insert dataframe (df) to the database for schema (schema_name) and table (table_name)
         log.info("Inserting to " + table_name + "." + schema_name + "... ")
-        ret_val = False
 
         try:
             df.to_sql(name=table_name, con=self.engine, schema=schema_name, if_exists="append", index=False,
                       chunksize=10000)  # make sure to use default method=None
         except (pyodbc.Error, exc.SQLAlchemyError) as err:
-            log.warning("Could not insert to database for table: " + schema_name + "." + table_name +
+            log.error("Could not insert to database for table: " + schema_name + "." + table_name +
                                                              ". See detailed message below:")
-            log.warning(str(err) + "\n")
+            log.error(str(err) + "\n")
+            raise Exception(str(err))
         else:
             if df.shape[0] == 0:
                 # try to catch some of the possible silent db fails here.

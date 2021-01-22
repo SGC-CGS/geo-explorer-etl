@@ -3,13 +3,12 @@ from datetime import datetime
 import logging
 import requests
 
-
 # set up logger if available
 log = logging.getLogger("etl_log")
 log.addHandler(logging.NullHandler())
 
 
-def get_metadata_dimensions(metadata, ignore_geo):
+def get_metadata_dimension_names(metadata, ignore_geo):
     # return list of dimensions from meta data
     #   metadata - meta data formatted as it comes from from get_cube_metadata
     #   ignore_geo - True=skip geography dimension
@@ -23,6 +22,17 @@ def get_metadata_dimensions(metadata, ignore_geo):
     else:
         log.warning("Could not find any dimensions in the metadata.")
     return dim
+
+
+def get_metadata_field(metadata, field_name, default_value):
+    # return requested field (field_name) from get cube metadata results (metadata)
+    # if not available, return default (default_value)
+    retval = default_value
+    if field_name in metadata:
+        retval = metadata[field_name]
+    else:
+        print("Could not release find " + field_name + " in the cube metadata.")
+    return retval
 
 
 def get_metadata_release_date(metadata):

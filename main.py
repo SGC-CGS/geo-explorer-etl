@@ -1,12 +1,10 @@
-# Download data from WDS and update database
-
+# Download updated product data from WDS and update database
 import config as cfg  # configuration
+from datetime import datetime, date
 import dfhandler as dfh  # for altering pandas data frames
-import datetime
 import helpers as h  # helper functions
 import logging
 from logging.handlers import RotatingFileHandler
-# import pandas as pd
 import pathlib
 import scdb  # database class
 import scwds  # wds class
@@ -27,12 +25,13 @@ logger.addHandler(file_handler)  # for writing to file
 #   46100027 - 4,513,250 rows (5 dims)
 #   46100053 - 13,869,198 rows (6 dims)
 #   46100054 - 13,869,198 rows (6 dims)
-start_date = datetime.date(2020, 10, 27)  # y m d
-end_date = datetime.date(2020, 10, 28)
+start_date = date(2020, 10, 27)  # y m d
+end_date = date(2020, 10, 28)
+
 
 if __name__ == "__main__":
 
-    logger.info("ETL Process Start: " + str(datetime.datetime.now()))
+    logger.info("ETL Process Start: " + str(datetime.now()))
     logger.info("Looking for updates from " + str(start_date) + " to " + str(end_date) + ":")
 
     # create wds and db objects
@@ -60,97 +59,94 @@ if __name__ == "__main__":
             for pid in products_to_update:
 
                 pid_str = str(pid)  # for moments when str is required
+                pid_folder = WORK_DIR + "\\" + pid_str + "-en"
+                pid_csv_path = pid_folder + "\\" + pid_str + ".csv"
 
                 # Download the product tables
-                files_downloaded = 0
-                pid_path = {"en": {}, "fr": {}}
-                for lg in pid_path.keys():
-                    pid_path[lg]["Folder"] = WORK_DIR + "\\" + pid_str + "-" + lg
-                    pid_path[lg]["CSVFile"] = pid_path[lg]["Folder"] + "\\" + pid_str + ".csv"
-                    # TODO - uncomment the code below to download and unzip files (commented out to save time testing)
-                    # if wds.get_full_table_download(pid, lg, pid_path[lg]["Folder"] + ".zip"):  # download
-                    #     if h.unzip_file(pid_path[lg]["Folder"] + ".zip", pid_path[lg]["Folder"]):  # unzip
-                    #         files_downloaded += 1
+                if wds.get_full_table_download(pid, "en", pid_folder + ".zip"):  # download (only need en file)
+                    if h.unzip_file(pid_folder + ".zip", pid_folder):  # unzip
 
-                files_downloaded = 2  # TODO - REMOVE TEST CODE
+                        # delete product in database
+                        if db.delete_product(pid):
 
-                if files_downloaded == len(pid_path):
+                            # set up default dates
+                            cur_date_fmt = datetime.today().strftime("%Y-%m-%d")  # 2021-01-21
 
-                    # delete product in database
-                    if db.delete_product(pid):
+                            # Get the product metadata
+                            prod_metadata = wds.get_cube_metadata(pid)
+                            dimensions = scwds.get_metadata_dimension_names(prod_metadata, True)
+                            release_date = scwds.get_metadata_release_date(prod_metadata)
+                            cube_start_date = scwds.get_metadata_field(prod_metadata, "cubeStartDate", cur_date_fmt)
+                            cube_end_date = scwds.get_metadata_field(prod_metadata, "cubeEndDate", cur_date_fmt)
+                            cube_frequency = scwds.get_metadata_field(prod_metadata, "frequencyCode", 12)  # def. annual
+                            cube_dimensions = scwds.get_metadata_field(prod_metadata, "dimension", [{}])
+                            uom_codes = wds.uom_codes
 
-                        # Get the product metadata
-                        prod_metadata = wds.get_cube_metadata(pid)
-                        dimensions = scwds.get_metadata_dimensions(prod_metadata, True)
-                        release_date = scwds.get_metadata_release_date(prod_metadata)
+                            # build list of dates that should be found in the reference data based on the cube frequency
+                            ref_dates = dfh.build_reference_date_list(cube_start_date, cube_end_date, cube_frequency)
 
-                        # Put csv files into data frames and do prelim cleaning
-                        df_fr = dfh.load_and_prep_prod_df(pid_path["fr"]["CSVFile"], dimensions, "fr", ";", pid_str,
-                                                          release_date)
-                        df_en = dfh.load_and_prep_prod_df(pid_path["en"]["CSVFile"], dimensions, "en", ",", pid_str,
-                                                          release_date)
+                            # Indicator
+                            next_ind_id = db.get_last_indicator_id() + 1  # setup unique IDs
+                            df_ind = dfh.build_indicator_df(pid, release_date, cube_dimensions, uom_codes, ref_dates,
+                                                            next_ind_id)
 
-                        # Build and insert datasets for each table
-                        # Note data frames are deleted as soon as they are no longer needed to save memory
+                            # This data is needed for several other inserts, so create a subset of just the necessary
+                            # columns for the indicator insert so we can keep the rest.
+                            df_ind_subset = dfh.build_indicator_df_subset(df_ind)
+                            db.insert_dataframe_rows(df_ind_subset, "Indicator", "gis")
+                            del df_ind_subset
+                            # keep the new IndicatorIds and other required columns for next set of table updates
+                            df_ind = df_ind.loc[:, ["IndicatorId", "IndicatorCode", "IndicatorFmt",
+                                                    "UOM_EN", "UOM_FR", "UOM_ID"]]
 
-                        # Indicator
-                        next_ind_id = db.get_last_indicator_id() + 1  # setup unique IDs
-                        df_ind = dfh.build_indicator_df_start(df_en, df_fr)  # prep first half of df
-                        del df_fr
-                        df_ind = dfh.build_indicator_df_end(df_ind, dimensions, next_ind_id)  # prep rest of df
+                            # Put csv files into data frames and do prelim cleaning
+                            df_en = dfh.load_and_prep_prod_df(pid_csv_path, dimensions, "en", ",", pid_str,
+                                                              release_date)
 
-                        # This data is needed for several other inserts, so create a subset of just the necessary
-                        # columns for the indicator insert so we can keep the rest.
-                        df_ind_subset = dfh.build_indicator_df_subset(df_ind)
-                        db.insert_dataframe_rows(df_ind_subset, "Indicator", "gis")
-                        del df_ind_subset
-                        # keep the new IndicatorIds and other required columns for next set of table updates
-                        df_ind = df_ind.loc[:, ["IndicatorId", "IndicatorCode", "IndicatorFmt",
-                                                "UOM_EN", "UOM_FR", "UOM_ID"]]
+                            # GeographicLevelforIndicator
+                            df_gli = dfh.build_geographic_level_for_indicator_df(df_en, df_ind)
+                            db.insert_dataframe_rows(df_gli, "GeographicLevelForIndicator", "gis")
+                            del df_gli
 
-                        # GeographicLevelforIndicator
-                        df_gli = dfh.build_geographic_level_for_indicator_df(df_en, df_ind)
-                        db.insert_dataframe_rows(df_gli, "GeographicLevelForIndicator", "gis")
-                        del df_gli
+                            # get ids from gis.GeographyReference for next set of table updates
+                            df_geo_ref = db.get_geo_reference_ids()
 
-                        # get ids from gis.GeographyReference for next set of table updates
-                        df_geo_ref = db.get_geo_reference_ids()
+                            # IndicatorValues
+                            next_ind_val_id = db.get_last_indicator_value_id() + 1  # set unique IDs
+                            df_ind_null = db.get_indicator_null_reason()  # codes from gis.IndicatorNullReason
+                            df_ind_val = dfh.build_indicator_values_df(df_en, df_geo_ref, df_ind_null,
+                                                                       next_ind_val_id)
+                            db.insert_dataframe_rows(df_ind_val, "IndicatorValues", "gis")
+                            # keep the new IndicatorValueIds for next table update
+                            df_ind_val.drop(["VALUE", "NullReasonId"], axis=1, inplace=True)
+                            del df_ind_null
 
-                        # IndicatorValues
-                        next_ind_val_id = db.get_last_indicator_value_id() + 1  # set unique IDs
-                        df_ind_null = db.get_indicator_null_reason()  # codes from gis.IndicatorNullReason
-                        df_ind_val = dfh.build_indicator_values_df(df_en, df_geo_ref, df_ind_null,
-                                                                   next_ind_val_id)
-                        db.insert_dataframe_rows(df_ind_val, "IndicatorValues", "gis")
-                        # keep the new IndicatorValueIds for next table update
-                        df_ind_val.drop(["VALUE", "NullReasonId"], axis=1, inplace=True)
-                        del df_ind_null
+                            # GeographyReferenceForIndicator
+                            df_gri = dfh.build_geography_reference_for_indicator_df(df_en, df_ind, df_geo_ref,
+                                                                                    df_ind_val)
+                            db.insert_dataframe_rows(df_gri, "GeographyReferenceForIndicator", "gis")
+                            del df_ind_val
+                            del df_geo_ref
+                            del df_gri
 
-                        # GeographyReferenceForIndicator
-                        df_gri = dfh.build_geography_reference_for_indicator_df(df_en, df_ind, df_geo_ref, df_ind_val)
-                        db.insert_dataframe_rows(df_gri, "GeographyReferenceForIndicator", "gis")
-                        del df_ind_val
-                        del df_geo_ref
-                        del df_gri
+                            # IndicatorMetadata
+                            # build dimension key dataset from dimensions/dimensionvalues tables
+                            df_dm = db.get_dimensions_and_members_by_product(pid_str)
+                            df_dim_keys = dfh.build_dimension_unique_keys(df_dm)
+                            del df_dm
 
-                        # IndicatorMetadata
-                        # build dimension key dataset from dimensions/dimensionvalues tables
-                        df_dm = db.get_dimensions_and_members_by_product(pid_str)  # get dimensions and members from db
-                        df_dim_keys = dfh.build_dimension_unique_keys(df_dm)  # build unique keys with indicator names
-                        del df_dm
-
-                        df_im = dfh.build_indicator_metadata_df(
-                            df_ind,
-                            h.get_product_defaults(pid_str),  # default metadata by product id
-                            df_dim_keys
-                        )
-                        db.insert_dataframe_rows(df_im, "IndicatorMetaData", "gis")
-                        del df_im
-                        del df_ind
-                        del df_en
+                            df_im = dfh.build_indicator_metadata_df(
+                                df_ind,
+                                h.get_product_defaults(pid_str),  # default metadata by product id
+                                df_dim_keys
+                            )
+                            db.insert_dataframe_rows(df_im, "IndicatorMetaData", "gis")
+                            del df_im
+                            del df_ind
+                            del df_en
 
     # delete the objects
     db = None
     wds = None
 
-    logger.info("ETL Process End: " + str(datetime.datetime.now()))
+    logger.info("ETL Process End: " + str(datetime.now()))

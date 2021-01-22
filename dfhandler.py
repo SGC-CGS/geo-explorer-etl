@@ -1,12 +1,11 @@
 # data frame handling
-
+from datetime import datetime
 import helpers as h  # helper functions
 import itertools as it  # for iterators
 import logging
 import numpy as np
 import pandas as pd
 import re  # regular expressions
-
 
 # set up logger if available
 log = logging.getLogger("etl_log")
@@ -32,11 +31,10 @@ def build_column_and_type_dict(dimensions, lang):
 
 
 def build_dimension_unique_keys(dmf):
-    # Build a dataframe of unique dimension keys for the product id (pid) from a dataset returned from
-    # gis.Dimensions and gis.DimensionValues (dmf).
-    # The unique keys are the ordered and concatenated index values of each member in gis.DimensionValues.
-    # There are no IndicatorIds, vectors, or coordinates in these tables, so we are figuring out the link to Indicator
-    # backward through reference periods and indicator names.
+    # Build a dataframe of unique dimension keys for the product id (pid) from a dataset returned from gis.Dimensions
+    # and gis.DimensionValues (dmf). The unique keys are the ordered and concatenated index values of each member in
+    # gis.DimensionValues. There are no IndicatorIds, vectors, or coordinates in these tables, so we are figuring out
+    # the link to Indicator backward through reference periods and indicator names.
     dim_mem_names = {}
     dim_mem_ids = {}
 
@@ -50,52 +48,40 @@ def build_dimension_unique_keys(dmf):
         if dim_id not in dim_mem_names:
             dim_mem_names[dim_id] = []
         dim_mem_names[dim_id].append(mem_name)
-
         if dim_id not in dim_mem_ids:
             dim_mem_ids[dim_id] = []
         dim_mem_ids[dim_id].append(mem_id)
 
-    mem_names = build_dimension_member_combos(dim_mem_names)
-    mem_ids = build_dimension_member_combos(dim_mem_ids)
+    mem_names = build_dimension_member_combos(dim_mem_names, "-")
+    mem_ids = build_dimension_member_combos(dim_mem_ids, "-")
     keys_df = False
     if len(mem_names) == len(mem_ids):
         # can combine the two lists b/c they are in the same order by dimension
         keys_df = pd.DataFrame({"IndicatorFmt": mem_names, "DimensionUniqueKey": mem_ids})
-
     return keys_df
 
 
-def build_dimension_member_combos(dim_members):
-    # find all possible combinations of dimension members in dictionary(dim_members)
-    # dictionary examples (with dimensions numbered 1-3):
-    # {1: ['A1'], 2: ['B1', 'B2'], 3: ['C1', 'C2']} (for member names)
-    # {1: [10], 2: [20, 30], 3: [40, 50]} (for member ids)
-    # returns list member ids or member names separates by "-"
-    # ex. if dimensions A-->C exist with 2 members each. This should result in 1x2x2=4 possible combinations
-    #   A1-B1-C1 10-20-40
-    #   A1-B1-C2 10-20-50
-    #   A1-B2-C1 10-30-40
-    #   A1-B2-C2 10-30-50
-
+def build_dimension_member_combos(dim_members, delim):
+    # find all combos of dimension members in dict(dim_members), return list of member ids/names separates by delimiter
+    # Examples (with dimensions numbered 1-3) should result in 1x2x2=4 possible member combinations:
+    # {1: ['A1'], 2: ['B1', 'B2'], 3: ['C1', 'C2']} (for member names) = [A1-B1-C1, A1-B1-C2, A1-B2-C1, A1-B2-C2]
+    # {1: [10], 2: [20, 30], 3: [40, 50]} (for member ids) = [10-20-40, 10-20-50, 10-30-40, 10-30-50]
     member_combinations = list(it.product(*(dim_members[mem] for mem in dim_members)))  # build all combos to a list
     mem_list = []
     for member_tup in member_combinations:
-        mem_list.append('-'.join(map(str, member_tup)))  # turn into list of strings w/ "-" separator
-
+        mem_list.append(delim.join(map(str, member_tup)))  # turn into list of strings w/ "-" separator
     return mem_list
 
 
 def build_dimension_ul(ref_year, indicator_name):
-    # build custom unordered list (html) based on
-    # provided reference year and indicator name columns
+    # build custom unordered list (html) based on provided reference year and indicator name columns
     dim_ul = "<ul><li>" + ref_year + "<li>" + indicator_name.str.replace(" _ ", "<li>") + "</li></ul>"
     return dim_ul
 
 
 def build_geographic_level_for_indicator_df(edf, idf):
-    # build the data frame for GeographicLevelForIndicator
-    # based on dataframe of english csv file (edf) and dataframe of Indicator
-    # codes and Ids that were just inserted to the db (idf).
+    # build the data frame for GeographicLevelForIndicator based on dataframe of english csv file (edf) and df of
+    # Indicator codes and Ids that were just inserted to the db (idf).
     log.info("Building GeographicLevelForIndicator table.")
     df_gli = edf.loc[:, ["DGUID", "IndicatorCode"]]  # subset of full en dataset
     df_gli["DGUID"] = df_gli["DGUID"].str[4:9]  # extract geo level id from DGUID
@@ -150,70 +136,104 @@ def build_geography_reference_for_indicator_df(edf, idf, gdf, ivdf):
 
 
 def build_indicator_code(coordinate, reference_date, pid_str):
-    # build a custom indicator code that strips geography from the coordinate and adds a reference date
+    # builds custom indicator code that strips geography from the coordinate and adds a reference date
     # IndicatorCode ex. 13100778.1.23.1.2018-01-01
     temp_coordinate = coordinate.str.replace(r"^([^.]+\.)", "", regex=True)  # strips 1st dimension (geography)
     indicator_code = pid_str + "." + temp_coordinate + "." + reference_date + "-01-01"
     return indicator_code
 
 
-def build_indicator_df_start(edf, fdf):
-    # edf --> english dataframe
-    # fdf --> french dataframe
-    # drop duplicte indicator codes from english dataframe
-    # merge with french and return the merged df
-    log.info("\nBuilding Indicator Table.")
-    new_df = pd.merge(
-        edf.drop_duplicates(subset=["IndicatorCode"], inplace=False),
-        fdf, on="IndicatorCode"
-    )
-    return new_df
+def build_indicator_df(product_id, release_dt, dim_members, uom_codeset, ref_date_list, next_id):
 
+    df = create_dimension_member_df(dim_members)  # turn dimension/member data into dataframe
+    df.sort_values(by=["DimPosId", "MemberId"], inplace=True)  # Important to allow recombining columns in df later
 
-def build_indicator_df_end(df, dims, next_id):
-    # for the given df:
-    #   populate indicator ids starting from next_id
-    #   concatenate dimension names to populate specified string fields
-    #   fix any data types/lengths as required before db insert
+    # prepare dictionaries for creating member combinations
+    dim_mem_ids = {}  # for coordinates
+    dim_mem_names_en = {}  # for english indicator name
+    dim_mem_names_fr = {}  # for french indicator name
+    dim_mem_uoms = {}  # for unit of measure (will only occur one per member)
 
-    df["IndicatorId"] = create_id_series(df, next_id)  # populate IDs
+    for index, row in df.iterrows():
+        dim_id = row["DimPosId"]
 
-    # operations on common field names for each language
-    for ln in list(["EN", "FR"]):
-        # concatenations
-        df["IndicatorName_" + ln] = concat_dimension_cols(dims[ln.lower()], df, " _ ")
-        df["IndicatorDisplay_" + ln] = build_dimension_ul(df["RefYear"], df["IndicatorName_" + ln])
-        df["IndicatorNameLong_" + ln] = df["IndicatorName_" + ln]  # just a copy of a field required for db
-        # field lengths and types
-        df["IndicatorName_" + ln] = df["IndicatorName_" + ln].str[:1000]
-        df["IndicatorDisplay_" + ln] = df["IndicatorDisplay_" + ln].str[:500]
-        df["UOM_" + ln] = df["UOM_" + ln].astype("string").str[:50]
-        df["IndicatorNameLong_" + ln] = df["IndicatorNameLong_" + ln].str[:1000]
+        # skip dimension 1 (geography)
+        if row["DimNameEn"] != "Geography":
+            if dim_id not in dim_mem_names_en:
+                dim_mem_names_en[dim_id] = []
+            if dim_id not in dim_mem_names_fr:
+                dim_mem_names_fr[dim_id] = []
+            if dim_id not in dim_mem_ids:
+                dim_mem_ids[dim_id] = []
+            if dim_id not in dim_mem_uoms:
+                dim_mem_uoms[dim_id] = []
+            dim_mem_names_en[dim_id].append(row["MemberNameEn"])
+            dim_mem_names_fr[dim_id].append(row["MemberNameFr"])
+            dim_mem_ids[dim_id].append(row["MemberId"])
+            app_uom = str(row["MemberUomCode"]) if row["DimHasUom"] else ""  # keeps "nan" from ending up in the combo
+            dim_mem_uoms[dim_id].append(app_uom)
 
+    # build all possible member combinations
+    mem_names_en = build_dimension_member_combos(dim_mem_names_en, " _ ")
+    mem_names_fr = build_dimension_member_combos(dim_mem_names_fr, " _ ")
+    mem_ids = build_dimension_member_combos(dim_mem_ids, ".")
+    mem_uoms = build_dimension_member_combos(dim_mem_uoms, " ")
+
+    pre_df = False
+    # because the dicts are already sorted we can safely stick them together as columns in a dataframe at the end.
+    if len(mem_names_en) == len(mem_names_fr) == len(mem_ids) == len(mem_uoms):
+        pre_df = pd.DataFrame(
+            {"IndicatorName_EN": mem_names_en, "IndicatorName_FR": mem_names_fr, "Coordinate": mem_ids,
+             "UOM_ID": mem_uoms}, dtype=str)
+
+    # UOM - Combining members may result in the uom field looking like "nan nan 229.0", we only want the 229 part.
+    # Must go to float before int to prevent conversion error
+    pre_df["UOM_ID"] = pre_df["UOM_ID"].str.replace("nan", "").str.replace(" ", "").astype("float").astype("int16")
+    # Turn off inspection next 2 lines, false-positives from pycharm: see https://youtrack.jetbrains.com/issue/PY-43841
+    # noinspection PyTypeChecker
+    pre_df["UOM_EN"] = pre_df.apply(lambda x: h.get_uom_desc_from_code_set(x["UOM_ID"], uom_codeset, "en"), axis=1)
+    # noinspection PyTypeChecker
+    pre_df["UOM_FR"] = pre_df.apply(lambda x: h.get_uom_desc_from_code_set(x["UOM_ID"], uom_codeset, "fr"), axis=1)
+
+    pre_df["IndicatorThemeID"] = product_id
+    pre_df["ReleaseIndicatorDate"] = release_dt
+    pre_df["Vector"] = np.NaN  # Vector field exists in gis.Indicator but is not used. We will insert nulls.
+    pre_df["IndicatorNameLong_EN"] = pre_df["IndicatorName_EN"]  # just a copy of a field required for db
+    pre_df["IndicatorNameLong_FR"] = pre_df["IndicatorName_FR"]
+
+    # Create new indicator data frame with a row for each year in the reference period
+    rd_years = h.get_years_range(ref_date_list)
+    ind_df = copy_data_frames_for_year_range(pre_df, rd_years)
+
+    # add the remaining fields that required RefYear to be built first
+    ind_df["RefYear"] = ind_df["RefYear"].astype("string")
+    ind_df["ReferencePeriod"] = ind_df["RefYear"] + "-01-01"  # becomes Jan 1
+    ind_df["IndicatorCode"] = str(product_id) + "." + ind_df["Coordinate"] + "." + ind_df["ReferencePeriod"]
+    ind_df["IndicatorDisplay_EN"] = build_dimension_ul(ind_df["RefYear"], ind_df["IndicatorName_EN"])
+    ind_df["IndicatorDisplay_FR"] = build_dimension_ul(ind_df["RefYear"], ind_df["IndicatorName_FR"])
+    ind_df["IndicatorId"] = create_id_series(ind_df, next_id)  # populate IDs
     # build field needed later for IndicatorMetaData DimensionUniqueKey matching
-    df["IndicatorFmt"] = df["RefYear"] + "-" + df["IndicatorName_EN"].str.replace(" _ ", "-")
+    ind_df["IndicatorFmt"] = ind_df["RefYear"] + "-" + ind_df["IndicatorName_EN"].str.replace(" _ ", "-")
 
     # set datatypes for db
-    df["ReleaseIndicatorDate"] = df["ReleaseIndicatorDate"].astype("datetime64[ns]")
-    df["IndicatorCode"] = df["IndicatorCode"].str[:100]
+    ind_df["ReleaseIndicatorDate"] = ind_df["ReleaseIndicatorDate"].astype("datetime64[ns]")
+    ind_df["ReferencePeriod"] = ind_df["ReferencePeriod"].astype("datetime64[ns]")
+    ind_df["IndicatorCode"] = ind_df["IndicatorCode"].str[:100]
 
-    log.info("Finished building Indicator table.")
-    return df
+    return ind_df
 
 
 def build_indicator_df_subset(idf):
     # for the indicator dataframe (idf), return only those rows needed for database inserts
-    df = idf.loc[:, ["IndicatorId", "IndicatorName_EN", "IndicatorName_FR", "IndicatorThemeID",
-                         "ReleaseIndicatorDate", "ReferencePeriod", "IndicatorCode", "IndicatorDisplay_EN",
-                         "IndicatorDisplay_FR", "UOM_EN", "UOM_FR", "Vector", "IndicatorNameLong_EN",
-                         "IndicatorNameLong_FR"]]
+    df = idf.loc[:, ["IndicatorId", "IndicatorName_EN", "IndicatorName_FR", "IndicatorThemeID", "ReleaseIndicatorDate",
+                     "ReferencePeriod", "IndicatorCode", "IndicatorDisplay_EN", "IndicatorDisplay_FR", "UOM_EN",
+                     "UOM_FR", "Vector", "IndicatorNameLong_EN", "IndicatorNameLong_FR"]]
     return df
 
 
 def build_indicator_metadata_df(idf, prod_defaults, dkdf):
     # build the data frame for IndicatorMetadata using the indicator dataset (idf),
     # product defaults (prod_defaults) and unique dimension keys (dkdf)
-
     log.info("Building IndicatorMetaData table.")
 
     # formatted indicator names in idf can merged with unique dimension keys data frame
@@ -224,8 +244,7 @@ def build_indicator_metadata_df(idf, prod_defaults, dkdf):
     # gis.Indicator columns that can be reused for gis.IndicatorMetaData
     df_im["MetaDataId"] = df_im["IndicatorId"]  # duplicate column
     df_im["DefaultRelatedChartId"] = df_im["IndicatorId"]  # duplicate column
-    df_im.rename(columns={"UOM_EN": "FieldAlias_EN", "UOM_FR": "FieldAlias_FR", "UOM_ID": "DataFormatId"},
-                 inplace=True)  # rename to match db
+    df_im.rename(columns={"UOM_EN": "FieldAlias_EN", "UOM_FR": "FieldAlias_FR", "UOM_ID": "DataFormatId"}, inplace=True)
 
     # set default metadata for product
     df_im["DefaultBreaksAlgorithmId"] = prod_defaults["default_breaks_algorithm_id"]
@@ -288,10 +307,8 @@ def build_indicator_values_df(edf, gdf, ndf, next_id):
 
     df_iv.dropna(subset=["GeographyReferenceId"], inplace=True)  # drop empty ids
     df_iv.drop(["GeographyReferenceId"], axis=1, inplace=True)
-
     df_iv["IndicatorValueCode"] = df_iv["DGUID"] + "." + df_iv["IndicatorCode"]  # combine DGUID and IndicatorCode
     df_iv.drop(["DGUID", "IndicatorCode"], axis=1, inplace=True)
-
     df_iv = pd.merge(df_iv, ndf, left_on="STATUS", right_on="Symbol", how="left")  # join to NullReasonId for Symbol
     df_iv.drop(["STATUS", "Symbol"], axis=1, inplace=True)
 
@@ -304,6 +321,37 @@ def build_indicator_values_df(edf, gdf, ndf, next_id):
 
     log.info("Finished building IndicatorValues table.")
     return df_iv
+
+
+def build_reference_date_list(start_str, end_str, freq_code):
+    # build list of dates from start_str to end_str (will always be a string in YYYY-MM-DD format) based on freq_code
+    # (code from WDS indicating how often the data is published). Returns dates as pandas series (datetime64[ns])
+    start_dt = datetime.strptime(start_str, "%Y-%m-%d")
+    end_dt = datetime.strptime(end_str, "%Y-%m-%d")
+
+    freq_dict = {
+        1: "D",  # daily
+        2: "W",  # weekly (sun)
+        4: "2W",  # every 2 weeks (sun)
+        6: "MS",  # monthly as start of month
+        7: "2MS",  # every 2 months, interpreted as every 2 months at start of month
+        9: "QS",  # quarterly as start of quarter
+        10: "4MS",  # 3 times per year, interpreted as every 4 months at start of month
+        11: "6MS",  # semi-annual, interpreted as every 6 months at start of month
+        12: "AS",  # annual as start of year
+        13: "2AS",  # every 2 years, interpreted as every 2 years at start of year
+        14: "3AS",  # every 3 years, interpreted as every 3 years at start of year
+        15: "4AS",  # every 4 years, interpreted as every 4 years at start of year
+        16: "5AS",  # every 5 years, interpreted as every 5 years at start of year
+        17: "10AS",  # every 10 years, interpreted as every 10 years at start of year
+        18: "AS",  # occasional annual as start of year
+        19: "QS",  # occasional quarterly as start of quarter
+        20: "MS",  # occasional monthly as start of month
+        21: "D"  # occasional daily as daily
+    }
+    fr = freq_dict[freq_code] if freq_code in freq_dict else "AS"  # default to first of each year if not in dict
+    retval = pd.date_range(start_dt, end_dt, freq=fr)
+    return retval
 
 
 def check_null_dimension_unique_keys(df):
@@ -344,7 +392,6 @@ def concat_dimension_cols(dimensions, df, delimiter):
             first_col = False
         else:
             retval += delimiter + df[dimension]
-
     return retval
 
 
@@ -358,8 +405,40 @@ def convert_csv_to_df(csv_file_name, delim, cols):
     for chunk in pd.read_csv(csv_file_name, chunksize=10000, sep=delim, usecols=list(cols.keys()), dtype=cols):
         prod_rows.append(chunk)
     csv_df = pd.concat(prod_rows)
-
     return csv_df
+
+
+def copy_data_frames_for_year_range(df_to_copy, year_list):
+    # When passed a dataframe (df_to_copy) and a list of years(year_list), build a copy of the dataframe
+    # for each year and add it to a list. The list is then combined into one big dataframe and returned in ref_df.
+    df_list = []
+    for rel_year in year_list:
+        tmp_df = df_to_copy.copy()
+        tmp_df["RefYear"] = rel_year
+        df_list.append(tmp_df)
+    ret_df = pd.concat(df_list)  # combine into one dataframe
+    return ret_df
+
+
+def create_dimension_member_df(dim_members):
+    # from dimension/member json --> # build data frame of dimension and member info, return as df
+    rows_list = []
+    for dim in dim_members:
+        for mem in dim["member"]:
+            dim_dict = {
+                "DimPosId": dim["dimensionPositionId"],
+                "DimNameEn": dim["dimensionNameEn"],
+                "DimNameFr": dim["dimensionNameFr"],
+                "DimHasUom": dim["hasUom"],
+                "MemberId": mem["memberId"],
+                "MemberNameEn": mem["memberNameEn"],
+                "MemberNameFr": mem["memberNameFr"],
+                "MemberUomCode": mem["memberUomCode"]
+            }
+            rows_list.append(dim_dict)
+
+    dm_df = pd.DataFrame(rows_list)
+    return dm_df
 
 
 def create_id_series(df, start_id):
@@ -399,7 +478,6 @@ def load_and_prep_prod_df(csvfile, dims, language, delim, prod_id, rel_date):
         df["ReferencePeriod"] = df["RefYear"] + "-01-01"  # becomes Jan 1
         df["ReferencePeriod"] = df["ReferencePeriod"].astype("datetime64[ns]")
         df["Vector"] = df["Vector"].str.replace("v", "").astype("int32")  # remove v, make int
-
     return df
 
 
