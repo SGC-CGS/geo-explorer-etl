@@ -35,17 +35,6 @@ def get_metadata_field(metadata, field_name, default_value):
     return retval
 
 
-def get_metadata_release_date(metadata):
-    # return release date from meta data
-    #   metadata - meta data formatted as it comes from from get_cube_metadata
-    retval = datetime.today().isoformat(timespec="minutes")  # ex. 2020-12-11T10:11
-    if "releaseTime" in metadata:
-        retval = metadata["releaseTime"]
-    else:
-        log.warning("Could not release date/time in the metadata. Setting to current.")
-    return retval
-
-
 def write_file(filename, content, flags):
     retval = False
     try:
@@ -175,13 +164,11 @@ class serviceWds(object):
         retval = False
         if self.last_http_req_status:
             resp = r.json()
-
             if resp[0]["status"] != "SUCCESS":
                 log.warning("Cube metadata could not be retrieved. WDS returned: " + str(resp["status"]) +
                             " for product " + str(product_id))
             else:
                 retval = resp[0]["object"]
-
         return retval
 
     def get_delta_file(self, rel_date, file_path):
