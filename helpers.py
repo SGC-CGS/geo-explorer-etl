@@ -20,10 +20,14 @@ def convert_ref_year_to_date(ref_per):
     return retval
 
 
+def create_id_series(df, start_id):
+    # returns a series of ids for a dataframe starting from start_id
+    return pd.RangeIndex(start=start_id, stop=(start_id + df.shape[0]))
+
+
 def daterange(date1, date2):
     # return range of dates between date1 and date2
     retval = []
-
     for n in range(int((date2 - date1).days) + 1):
         retval.append(date1 + dt.timedelta(n))
 
