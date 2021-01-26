@@ -12,20 +12,13 @@ log = logging.getLogger("etl_log")
 log.addHandler(logging.NullHandler())
 
 
-def build_column_and_type_dict(dimensions, lang):
-    # set up the dicionary of columns and data types for pandas df
-    # add columns listed in dimensions to the predefined columns below.
-    # returns dictionary of cols:types for en and fr
-    # Note:
-    #   df returns all strings as object type by default
-    #   category more efficient for string fields if there are < 50% unique values and no string operations are required
-    if lang == "en":
-        cols = {"REF_DATE": "string", "DGUID": "string", "UOM": "category", "UOM_ID": "int16", "VECTOR": "string",
-                "COORDINATE": "string", "STATUS": "category", "SYMBOL": "string", "VALUE": "float64"}
-    else:
-        cols = {"PÉRIODE DE RÉFÉRENCE": "string", "COORDONNÉES": "string", "UNITÉ DE MESURE": "category"}
-
-    for dim in dimensions[lang]:
+def build_column_and_type_dict(dimensions):
+    # set up the dicionary of columns and data types for pandas df, then add columns listed in dimensions as str types
+    # Note: All strings as object type by default. Categories are more efficient for string fields if there are < 50%
+    # unique values and no string operations are required.
+    cols = {"REF_DATE": "string", "DGUID": "string", "UOM": "category", "UOM_ID": "int16", "VECTOR": "string",
+            "COORDINATE": "string", "STATUS": "category", "SYMBOL": "string", "VALUE": "float64"}
+    for dim in dimensions:
         cols[dim] = "string"
     return cols
 
@@ -42,8 +35,7 @@ def build_dimension_unique_keys(dmf):
     for index, row in dmf.iterrows():
         dim_id = row["DimensionId"]
         mem_id = row["DimensionValueId"]
-        # strips leading number/period/whitespace from member name (ex. "02. Resident owners only" removes "02. ")
-        mem_name = re.sub(r"^([^.]+\.)", "", row["Display_EN"]).lstrip()
+        mem_name = re.sub(r"^([^.]+\.)", "", row["Display_EN"]).lstrip()  # "02. Resident owners only" -->removes "02. "
 
         if dim_id not in dim_mem_names:
             dim_mem_names[dim_id] = []
@@ -79,30 +71,24 @@ def build_dimension_ul(ref_year, indicator_name):
     return dim_ul
 
 
-def build_geographic_level_for_indicator_df(edf, idf):
-    # build the data frame for GeographicLevelForIndicator based on dataframe of english csv file (edf) and df of
-    # Indicator codes and Ids that were just inserted to the db (idf).
-    log.info("Building GeographicLevelForIndicator table.")
-    df_gli = edf.loc[:, ["DGUID", "IndicatorCode"]]  # subset of full en dataset
-    df_gli["DGUID"] = df_gli["DGUID"].str[4:9]  # extract geo level id from DGUID
-    df_gli.rename(columns={"DGUID": "GeographicLevelId"}, inplace=True)  # rename to match db
-    pattern = "|".join(["S0504", "S0505", "S0506"])  # S0504(CA),S0505(CMAP),S0506(CAP)-->S0503(CMA)
+def build_geographic_level_for_indicator_df(gldf, idf):
+    # build the data frame for GeographicLevelForIndicator based on dataframe geographic levels abnd indicator codes
+    # (gldf) and df of Indicator codes and Ids that were just inserted to the db (idf).
+    df_gli = gldf
+    pattern = "|".join(["S0504", "S0505", "S0506"])  # S0504(CA),S0505(CMAP),S0506(CAP)->S0503(CMA) (from orig PowerBI)
     df_gli["GeographicLevelId"] = df_gli["GeographicLevelId"].str.replace(pattern, "S0503")
-    df_gli.drop_duplicates(inplace=True)  # remove dupe rows
+    df_gli.drop_duplicates(inplace=True)  # remove any dupe rows
 
     df_gli = pd.merge(df_gli, idf, on="IndicatorCode", how="left")  # join datasets
     df_gli.drop(["IndicatorCode"], axis=1, inplace=True)  # no longer need col
     df_gli.dropna(inplace=True)  # remove any row w/ empty value
-
-    # Ensure columns are in order needed for insert
-    df_gli = df_gli.loc[:, ["IndicatorId", "GeographicLevelId"]]
 
     # every IndicatorID needs a row added with GeographicLevel = "SSSS" (for web display)
     df_web_inds = df_gli.loc[:, ["IndicatorId"]].drop_duplicates(inplace=False)
     df_web_inds["GeographicLevelId"] = "SSSS"
     df_gli = df_gli.append(df_web_inds)
 
-    log.info("Finished building GeohraphicLevelForIndicator table.")
+    df_gli = df_gli.loc[:, ["IndicatorId", "GeographicLevelId"]]  # column order needeed for db insert
     return df_gli
 
 
@@ -110,13 +96,12 @@ def build_geography_reference_for_indicator_df(edf, idf, gdf, ivdf):
     # Build the data frame for GeographicReferenceForIndicator based on dataframe of english csv file (edf),
     # GeographyReference ids (gdf), Indicator # codes and Ids that were just inserted to the db (idf), and
     # Indicator Values that were just added to the db (ivdf).
-    log.info("Building GeographyReferenceForIndicator table.")
     df_gri = edf.loc[:, ["DGUID", "IndicatorCode", "ReferencePeriod"]]  # subset of full en dataset
     df_gri = pd.merge(df_gri, idf, on="IndicatorCode", how="left")  # join datasets
     df_gri["IndicatorValueCode"] = df_gri["DGUID"] + "." + df_gri["IndicatorCode"]  # combine DGUID and IndicatorCode
 
     df_gri = pd.merge(df_gri, gdf, left_on="DGUID", right_on="GeographyReferenceId", how="left")  # join geoRef for id
-    check_null_geography_reference(df_gri)  # notify user of any DGUIDs w/o matching geoRef
+    df_null_geo_rf = check_null_geography_reference(df_gri)  # notify user of any DGUIDs w/o matching geoRef
 
     df_gri.dropna(subset=["GeographyReferenceId", "DGUID"], inplace=True)  # drop rows with empty ids
     df_gri.drop(["GeographyReferenceId"], axis=1, inplace=True)  # drop ref column used for merge
@@ -131,15 +116,13 @@ def build_geography_reference_for_indicator_df(edf, idf, gdf, ivdf):
     df_gri["GeographyReferenceId"] = df_gri["GeographyReferenceId"].astype("string").str[:25]
     df_gri["ReferencePeriod"] = df_gri["ReferencePeriod"].astype("datetime64[ns]")
 
-    log.info("Finished building GeographyReferenceForIndicator table.")
-    return df_gri
+    return df_gri, df_null_geo_rf
 
 
 def build_indicator_code(coordinate, reference_date, pid_str):
     # builds custom indicator code that strips geography from the coordinate and adds a reference date
-    # IndicatorCode ex. 13100778.1.23.1.2018-01-01
     temp_coordinate = coordinate.str.replace(r"^([^.]+\.)", "", regex=True)  # strips 1st dimension (geography)
-    indicator_code = pid_str + "." + temp_coordinate + "." + reference_date + "-01-01"
+    indicator_code = pid_str + "." + temp_coordinate + "." + reference_date + "-01-01"  # ex. 13100778.1.23.1.2018-01-01
     return indicator_code
 
 
@@ -182,9 +165,8 @@ def build_indicator_df(product_id, release_dt, dim_members, uom_codeset, ref_dat
     pre_df = False
     # because the dicts are already sorted we can safely stick them together as columns in a dataframe at the end.
     if len(mem_names_en) == len(mem_names_fr) == len(mem_ids) == len(mem_uoms):
-        pre_df = pd.DataFrame(
-            {"IndicatorName_EN": mem_names_en, "IndicatorName_FR": mem_names_fr, "Coordinate": mem_ids,
-             "UOM_ID": mem_uoms}, dtype=str)
+        pre_df = pd.DataFrame({"IndicatorName_EN": mem_names_en, "IndicatorName_FR": mem_names_fr,
+                               "Coordinate": mem_ids, "UOM_ID": mem_uoms}, dtype=str)
 
     # UOM - Combining members may result in the uom field looking like "nan nan 229.0", we only want the 229 part.
     # Must go to float before int to prevent conversion error
@@ -211,7 +193,7 @@ def build_indicator_df(product_id, release_dt, dim_members, uom_codeset, ref_dat
     ind_df["IndicatorCode"] = str(product_id) + "." + ind_df["Coordinate"] + "." + ind_df["ReferencePeriod"]
     ind_df["IndicatorDisplay_EN"] = build_dimension_ul(ind_df["RefYear"], ind_df["IndicatorName_EN"])
     ind_df["IndicatorDisplay_FR"] = build_dimension_ul(ind_df["RefYear"], ind_df["IndicatorName_FR"])
-    ind_df["IndicatorId"] = create_id_series(ind_df, next_id)  # populate IDs
+    ind_df["IndicatorId"] = h.create_id_series(ind_df, next_id)  # populate IDs
     # build field needed later for IndicatorMetaData DimensionUniqueKey matching
     ind_df["IndicatorFmt"] = ind_df["RefYear"] + "-" + ind_df["IndicatorName_EN"].str.replace(" _ ", "-")
 
@@ -219,7 +201,6 @@ def build_indicator_df(product_id, release_dt, dim_members, uom_codeset, ref_dat
     ind_df["ReleaseIndicatorDate"] = ind_df["ReleaseIndicatorDate"].astype("datetime64[ns]")
     ind_df["ReferencePeriod"] = ind_df["ReferencePeriod"].astype("datetime64[ns]")
     ind_df["IndicatorCode"] = ind_df["IndicatorCode"].str[:100]
-
     return ind_df
 
 
@@ -234,11 +215,10 @@ def build_indicator_df_subset(idf):
 def build_indicator_metadata_df(idf, prod_defaults, dkdf):
     # build the data frame for IndicatorMetadata using the indicator dataset (idf),
     # product defaults (prod_defaults) and unique dimension keys (dkdf)
-    log.info("Building IndicatorMetaData table.")
 
     # formatted indicator names in idf can merged with unique dimension keys data frame
     idf = pd.merge(idf, dkdf, on="IndicatorFmt", how="left")
-    check_null_dimension_unique_keys(idf)  # notify user of any missing unique dimension keys
+    check_null_dimension_unique_keys(idf, True)  # notify user of any missing unique dimension keys
     df_im = idf.loc[:, ["IndicatorId", "UOM_EN", "UOM_FR", "UOM_ID", "DimensionUniqueKey"]]  # subset
 
     # gis.Indicator columns that can be reused for gis.IndicatorMetaData
@@ -289,8 +269,6 @@ def build_indicator_metadata_df(idf, prod_defaults, dkdf):
     df_im = df_im.loc[:, ["MetaDataId", "IndicatorId", "FieldAlias_EN", "FieldAlias_FR", "DataFormatId",
                           "DefaultBreaksAlgorithmId", "DefaultBreaks", "PrimaryChartTypeId", "PrimaryQuery",
                           "ColorTo", "ColorFrom", "DimensionUniqueKey", "DefaultRelatedChartId"]]
-
-    log.info("Finished building IndicatorMetaData table.")
     return df_im
 
 
@@ -298,12 +276,11 @@ def build_indicator_values_df(edf, gdf, ndf, next_id):
     # build the data frame for IndicatorValues
     # based on dataframe of english csv file (edf), GeographyReference ids (gdf), and NullReason ids (ndf).
     # populate indicator value ids starting from next_id.
+    # also collect and return unique GeographicLevelIDs
 
-    log.info("Building IndicatorValues table.")
     df_iv = edf.loc[:, ["DGUID", "IndicatorCode", "STATUS", "VALUE"]]  # subset of full en dataset
-    df_iv["IndicatorValueId"] = create_id_series(edf, next_id)  # populate IDs
+    df_iv["IndicatorValueId"] = h.create_id_series(edf, next_id)  # populate IDs
     df_iv = pd.merge(df_iv, gdf, left_on="DGUID", right_on="GeographyReferenceId", how="left")  # join to geoRef for id
-    check_null_geography_reference(df_iv)  # notify user of any DGUIDs w/o matching geoRef
 
     df_iv.dropna(subset=["GeographyReferenceId"], inplace=True)  # drop empty ids
     df_iv.drop(["GeographyReferenceId"], axis=1, inplace=True)
@@ -318,8 +295,6 @@ def build_indicator_values_df(edf, gdf, ndf, next_id):
 
     # Keep only the columns needed for insert
     df_iv = df_iv.loc[:, ["IndicatorValueId", "VALUE", "NullReasonId", "IndicatorValueCode"]]
-
-    log.info("Finished building IndicatorValues table.")
     return df_iv
 
 
@@ -354,11 +329,11 @@ def build_reference_date_list(start_str, end_str, freq_code):
     return retval
 
 
-def check_null_dimension_unique_keys(df):
-    # notify user if there are any missing DimensionUniqueKeys in the df
+def check_null_dimension_unique_keys(df, show_warnings):
+    # notify user if there are any missing DimensionUniqueKeys in the df and show_warnings is true
     missing_keys_df = df[df["DimensionUniqueKey"].isnull()]
-    if missing_keys_df.shape[0] > 0:
-        log.warning("***WARNING***\nDimensionUniqueKey could not be matched for the following indicators:")
+    if show_warnings and missing_keys_df.shape[0] > 0:
+        log.warning("\n***WARNING***\nDimensionUniqueKey could not be matched for the following indicators:")
         with pd.option_context('display.max_rows', None):
             log.warning(missing_keys_df)
         log.warning("*************\n")
@@ -368,13 +343,7 @@ def check_null_dimension_unique_keys(df):
 def check_null_geography_reference(df):
     # alert user w/ DGUID if any "GeographyReferenceId" in df has nulls
     df_null_gr = df[df["GeographyReferenceId"].isna()].loc[:, ["DGUID"]].drop_duplicates(inplace=False)
-    if df_null_gr.shape[0] > 0:
-        log.warning("***WARNING***\nThe following DGUIDs were not found in gis.GeographyReference and cannot be added "
-                    "to the database.\nAny values other than <NA> should be investigated.")
-        with pd.option_context('display.max_rows', None):
-            log.warning(df_null_gr["DGUID"].to_string(index=False))  # if the DGUID is <NA>, then there is no problem
-        log.warning("*************\n")
-    return
+    return df_null_gr
 
 
 def concat_dimension_cols(dimensions, df, delimiter):
@@ -395,19 +364,6 @@ def concat_dimension_cols(dimensions, df, delimiter):
     return retval
 
 
-def convert_csv_to_df(csv_file_name, delim, cols):
-    # read specified csv in chunks
-    # cols = dict of columns and data types colname:coltype
-    # return as pandas dataframe
-    prod_rows = []
-    log.info("Reading file to dataframe: " + csv_file_name)
-
-    for chunk in pd.read_csv(csv_file_name, chunksize=10000, sep=delim, usecols=list(cols.keys()), dtype=cols):
-        prod_rows.append(chunk)
-    csv_df = pd.concat(prod_rows)
-    return csv_df
-
-
 def copy_data_frames_for_year_range(df_to_copy, year_list):
     # When passed a dataframe (df_to_copy) and a list of years(year_list), build a copy of the dataframe
     # for each year and add it to a list. The list is then combined into one big dataframe and returned in ref_df.
@@ -425,60 +381,14 @@ def create_dimension_member_df(dim_members):
     rows_list = []
     for dim in dim_members:
         for mem in dim["member"]:
-            dim_dict = {
-                "DimPosId": dim["dimensionPositionId"],
-                "DimNameEn": dim["dimensionNameEn"],
-                "DimNameFr": dim["dimensionNameFr"],
-                "DimHasUom": dim["hasUom"],
-                "MemberId": mem["memberId"],
-                "MemberNameEn": mem["memberNameEn"],
-                "MemberNameFr": mem["memberNameFr"],
-                "MemberUomCode": mem["memberUomCode"]
-            }
+            dim_dict = {"DimPosId": dim["dimensionPositionId"], "DimNameEn": dim["dimensionNameEn"],
+                        "DimNameFr": dim["dimensionNameFr"], "DimHasUom": dim["hasUom"], "MemberId": mem["memberId"],
+                        "MemberNameEn": mem["memberNameEn"], "MemberNameFr": mem["memberNameFr"],
+                        "MemberUomCode": mem["memberUomCode"]}
             rows_list.append(dim_dict)
 
     dm_df = pd.DataFrame(rows_list)
     return dm_df
-
-
-def create_id_series(df, start_id):
-    # returns a series of ids for a dataframe starting from start_id
-    return pd.RangeIndex(start=start_id, stop=(start_id + df.shape[0]))
-
-
-def load_and_prep_prod_df(csvfile, dims, language, delim, prod_id, rel_date):
-    # load a product csv file and prepare it for further processing
-    #   csvfile --> path to an unzipped csv
-    #   dims --> dimensions
-    #   lang --> language en or fr
-    #   prod_id  --> product id
-    #   rel_date --> release_date
-    # returns a dataframe
-
-    col_dict = build_column_and_type_dict(dims, language)  # columns and data types dict
-    df = convert_csv_to_df(csvfile, delim, col_dict)  # load df from csv
-
-    if language == "fr":
-        # reduce dataset to smaller subset of unique indicator codes (less mem required)
-        df["IndicatorCode"] = build_indicator_code(df["COORDONNÉES"],
-                                                   df["PÉRIODE DE RÉFÉRENCE"], prod_id)
-        df.drop(["COORDONNÉES"], axis=1, inplace=True)  # not nec. after IndicatorCode built
-        df.drop_duplicates(subset=["IndicatorCode"], inplace=True)
-        df.rename(columns={"UNITÉ DE MESURE": "UOM_FR"}, inplace=True)  # to match db
-
-    elif language == "en":
-        # english dataset is much larger, do more prelim processing
-        df["IndicatorCode"] = build_indicator_code(df["COORDINATE"], df["REF_DATE"], prod_id)
-        df.drop(["COORDINATE"], axis=1, inplace=True)  # not nec. after IndicatorCode built
-        df.rename(columns={"VECTOR": "Vector", "UOM": "UOM_EN"}, inplace=True)  # to match db
-        df["DGUID"] = df["DGUID"].str.replace(".", "").str.replace("201A", "2015A")  # vintage
-        df["RefYear"] = df["REF_DATE"].map(h.fix_ref_year).astype("string")  # need 4 digit year
-        df["IndicatorThemeID"] = prod_id
-        df["ReleaseIndicatorDate"] = rel_date
-        df["ReferencePeriod"] = df["RefYear"] + "-01-01"  # becomes Jan 1
-        df["ReferencePeriod"] = df["ReferencePeriod"].astype("datetime64[ns]")
-        df["Vector"] = df["Vector"].str.replace("v", "").astype("int32")  # remove v, make int
-    return df
 
 
 def set_uom_format(uom_id, lang):
@@ -495,3 +405,36 @@ def set_uom_format(uom_id, lang):
     elif uom_id == 239:
         format_str = "Format(iv.value/100, 'P1', '" + loc_code + "')"
     return format_str
+
+
+def setup_chunk_columns(cdf, prod_id_str, rel_date):
+    # set up the columns in a dataframe chunk of data from the csv file (cdf) for the specified product (prod_id_str)
+    # and release date (rel_date)
+    chunk_df = cdf
+    chunk_df["IndicatorCode"] = build_indicator_code(chunk_df["COORDINATE"], chunk_df["REF_DATE"], prod_id_str)
+    chunk_df.drop(["COORDINATE"], axis=1, inplace=True)  # not nec. after IndicatorCode
+    chunk_df.rename(columns={"VECTOR": "Vector", "UOM": "UOM_EN"}, inplace=True)  # match db
+    chunk_df["DGUID"] = chunk_df["DGUID"].str.replace(".", "").str.replace("201A", "2015A")  # from powerBI process
+    chunk_df["RefYear"] = chunk_df["REF_DATE"].map(h.fix_ref_year).astype("string")  # need 4 digit year
+    chunk_df["IndicatorThemeID"] = prod_id_str
+    chunk_df["ReleaseIndicatorDate"] = rel_date
+    chunk_df["ReferencePeriod"] = chunk_df["RefYear"] + "-01-01"  # becomes Jan 1
+    chunk_df["ReferencePeriod"] = chunk_df["ReferencePeriod"].astype("datetime64[ns]")
+    chunk_df["Vector"] = chunk_df["Vector"].str.replace("v", "").astype("int32")
+    chunk_df["GeographicLevelId"] = chunk_df["DGUID"].str[4:9]  # extract geo level id
+    return chunk_df
+
+
+def write_dguid_warning(dguid_df):
+    # turn a dataframe of dguids (dguid_df) into a warning that can be written to a log file or console.
+    dguid_df.dropna(inplace=True)
+    dguid_df.drop_duplicates(inplace=True)
+    if dguid_df.shape[0] > 0:
+        msg = "***WARNING***\nThe following DGUIDs were not found in gis.GeographyReference and cannot be added to " \
+              "the database.\nAny values other than <NA>/NaN should be investigated.\n"
+        with pd.option_context('display.max_rows', None):
+            msg += dguid_df["DGUID"].to_string(index=False)  # if the DGUID is <NA>, then there is no problem
+        msg += "\n*************\n"
+    else:
+        msg = "All expected DGUIDs were found in gis.GeographyReferenceForIndicator."
+    return msg
