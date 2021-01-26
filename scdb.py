@@ -47,11 +47,17 @@ class sqlDb(object):
         qry6 = "DELETE FROM gis.Indicator WHERE IndicatorThemeId = ?"
 
         try:
+            log.info("Deleting from gis.RelatedCharts.")
             self.cursor.execute(qry1, pid)
+            log.info("Deleting from gis.IndicatorMetaData.")
             self.cursor.execute(qry2, pid)
+            log.info("Deleting from gis.IndicatorValues.")
             self.cursor.execute(qry3, pid)
+            log.info("Deleting from gis.GeographyReferenceForIndicator.")
             self.cursor.execute(qry4, pid)
+            log.info("Deleting from gis.GeographyLevelForIndicator.")
             self.cursor.execute(qry5, pid)
+            log.info("Deleting from gis.Indicator.")
             self.cursor.execute(qry6, pid)
         except pyodbc.Error as err:
             self.cursor.rollback()
@@ -60,7 +66,7 @@ class sqlDb(object):
         else:
             self.cursor.commit()
             retval = True
-            log.info("Successfully deleted product.")
+            log.info("Successfully deleted product.\n")
         return retval
 
     def execute_simple_select_query(self, query):
@@ -122,25 +128,15 @@ class sqlDb(object):
 
     def insert_dataframe_rows(self, df, table_name, schema_name):
         # insert dataframe (df) to the database for schema (schema_name) and table (table_name)
-        log.info("Inserting to " + table_name + "." + schema_name + "... ")
-
         try:
             df.to_sql(name=table_name, con=self.engine, schema=schema_name, if_exists="append", index=False,
-                      chunksize=10000)  # make sure to use default method=None
+                      chunksize=20000)  # make sure to use default method=None
         except (pyodbc.Error, exc.SQLAlchemyError) as err:
             log.error("Could not insert to database for table: " + schema_name + "." + table_name +
                                                              ". See detailed message below:")
             log.error(str(err) + "\n")
             raise Exception(str(err))
         else:
-            if df.shape[0] == 0:
-                # try to catch some of the possible silent db fails here.
-                err_msg = "OTHER DB ERROR: No records were inserted to " + schema_name + "." + table_name + \
-                          " \nThis may indicate a problem with the data. Verify data before running this script again."
-                log.error(err_msg)
-                raise Exception(err_msg)
-            else:
-                log.info("Inserted " + str(df.shape[0]) + " records.\n")
-                ret_val = True
+            ret_val = True
 
         return ret_val
