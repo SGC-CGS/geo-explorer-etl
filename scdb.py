@@ -26,7 +26,7 @@ class sqlDb(object):
 
         # sql alchemy engine for bulk inserts
         sa_params = urllib.parse.quote(conn_string)
-        log.info("Setting up SQL Alchemy engine: " + sa_params)
+        log.info("Setting up SQL Alchemy engine.\n")
         self.engine = create_engine("mssql+pyodbc:///?odbc_connect=%s" % sa_params, fast_executemany=True)
 
     def delete_product(self, product_id):
@@ -34,7 +34,7 @@ class sqlDb(object):
         # Note: We are not deleting the data from Dimensions, DimensionValues, or IndicatorTheme
         retval = False
         pid = str(product_id)
-        log.info("\nDeleting product " + pid + " from database.")
+        log.info("Deleting product " + pid + " from database.")
         log.info("Note: Data will NOT be deleted from Dimensions, DimensionValues, or IndicatorTheme.")
         pid_subqry = "SELECT IndicatorId FROM gis.Indicator WHERE IndicatorThemeId = ? "
         qry1 = "DELETE FROM gis.RelatedCharts WHERE RelatedChartId IN (" + pid_subqry + ") "
@@ -130,7 +130,7 @@ class sqlDb(object):
         # insert dataframe (df) to the database for schema (schema_name) and table (table_name)
         try:
             df.to_sql(name=table_name, con=self.engine, schema=schema_name, if_exists="append", index=False,
-                      chunksize=20000)  # make sure to use default method=None
+                      chunksize=10000)  # make sure to use default method=None
         except (pyodbc.Error, exc.SQLAlchemyError) as err:
             log.error("Could not insert to database for table: " + schema_name + "." + table_name +
                                                              ". See detailed message below:")
