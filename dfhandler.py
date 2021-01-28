@@ -346,24 +346,6 @@ def check_null_geography_reference(df):
     return df_null_gr
 
 
-def concat_dimension_cols(dimensions, df, delimiter):
-    # concatenate data frame columns by dimension name
-    #   dimensions = list of dimensions
-    #   df = data frame containing columns with names that match dimension list
-    #   delimiter = text to insert between dimension values
-    # returns a column (pandas series) with all dimension values joined
-    retval = ""
-    first_col = True
-
-    for dimension in dimensions:
-        if first_col:
-            retval = df[dimension]
-            first_col = False
-        else:
-            retval += delimiter + df[dimension]
-    return retval
-
-
 def copy_data_frames_for_year_range(df_to_copy, year_list):
     # When passed a dataframe (df_to_copy) and a list of years(year_list), build a copy of the dataframe
     # for each year and add it to a list. The list is then combined into one big dataframe and returned in ref_df.
@@ -436,5 +418,5 @@ def write_dguid_warning(dguid_df):
             msg += dguid_df["DGUID"].to_string(index=False)  # if the DGUID is <NA>, then there is no problem
         msg += "\n*************\n"
     else:
-        msg = "All expected DGUIDs were found in gis.GeographyReferenceForIndicator."
+        msg = "All expected DGUIDs were found in gis.GeographyReference."
     return msg
