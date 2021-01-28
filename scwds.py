@@ -1,5 +1,4 @@
 # WDS class
-from datetime import datetime
 import logging
 import requests
 
@@ -204,7 +203,7 @@ class serviceWds(object):
                 log.warning("Download link could not be retrieved. WDS returned: " + str(resp["status"]) +
                             " for product " + str(product_id) + " " + lang_code)
             else:
-                log.info("Downloading file from " + str(resp["object"]) + " " + str(datetime.now()))
+                log.info("Downloading file from " + str(resp["object"]))
                 dl_r = requests.get(resp["object"])  # wds returns a link to the zip file, download it
                 self.check_http_request_status(dl_r)
                 if self.last_http_req_status:
