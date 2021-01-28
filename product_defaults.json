@@ -1,4 +1,18 @@
 {
+  "46100018": {
+    "default_breaks_algorithm_id": 2,
+    "default_breaks": 7,
+    "primary_chart_type_id": 1,
+    "color_to": "38,50,56,255",
+    "color_from": "207,216,220,255"
+  },
+  "46100019": {
+    "default_breaks_algorithm_id": 2,
+    "default_breaks": 7,
+    "primary_chart_type_id": 1,
+    "color_to": "38,50,56,255",
+    "color_from": "207,216,220,255"
+  },
   "46100027": {
     "default_breaks_algorithm_id": 2,
     "default_breaks": 5,
