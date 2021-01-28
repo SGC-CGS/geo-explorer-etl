@@ -10,6 +10,26 @@ log = logging.getLogger("etl_log")
 log.addHandler(logging.NullHandler())
 
 
+def check_valid_parse_args(parsed_args):
+    # check the parsed arguments to see if they are valid. Returns status message if issues, otherwise "".
+    # Note data type validation is done when the argument is created.
+    ret_msg = ""
+    if parsed_args.start and parsed_args.end and not parsed_args.prodid:
+        if parsed_args.end < parsed_args.start:
+            ret_msg = "Start date must be before end date. Please check the date parameters and try again."
+    elif parsed_args.prodid and (parsed_args.start or parsed_args.end):
+        ret_msg = "Product ID search cannot be combined with start/end dates."
+    elif (parsed_args.start and not parsed_args.end) or (not parsed_args.start and parsed_args.end):
+        ret_msg = "Start and end date must both be present to look up products within a date range."
+    elif not parsed_args.start and not parsed_args.end and not parsed_args.prodid:
+        ret_msg = "No arguments were received."
+    if ret_msg != "":
+        ret_msg = "\n" + ret_msg + "\nValid arguments are:"
+        ret_msg += "\n1. --start YYYY-MM-DD and --end YYYY-MM-DD to update tables within a specified date range."
+        ret_msg += "\n2. --prodid 12345678 to update a specified table (replace 12345678 with product ID)."
+    return ret_msg
+
+
 def convert_ref_year_to_date(ref_per):
     # if only year is given, set to Jan 1 for db
 
@@ -74,15 +94,6 @@ def get_years_range(dt_range):
     return retval
 
 
-def mem_usage(pandas_obj):
-    if isinstance(pandas_obj, pd.DataFrame):
-        usage_b = pandas_obj.memory_usage(deep=True).sum()
-    else:  # we assume if not a df it's a series
-        usage_b = pandas_obj.memory_usage(deep=True)
-    usage_mb = usage_b / 1024 ** 2  # convert bytes to megabytes
-    return "{:03.2f} MB".format(usage_mb)
-
-
 def get_uom_desc_from_code_set(uom_code, uom_codeset, lang):
     # retrieve unit of measure description for the specified uom_code and language (lang)
     retval = ""
@@ -98,22 +109,10 @@ def get_uom_desc_from_code_set(uom_code, uom_codeset, lang):
     return retval
 
 
-def unzip_file(source_file, target_path):
-    log.info("Extracting " + source_file + ": " + str(dt.datetime.now()))
-    retval = False
-
-    if zf.is_zipfile(source_file):
-        try:
-            with zf.ZipFile(source_file, "r") as zip_obj:
-                zip_obj.printdir()
-                zip_obj.extractall(target_path)
-                log.info("\nFile extracted.")
-                retval = True
-        except zf.BadZipFile:
-            log.warning("\nERROR: Zip file is corrupted.")
-        except FileNotFoundError:
-            log.warning("\nERROR: Zip file does not exist.")
-    else:
+def valid_zip_file(source_file):
+    log.info("Checking " + source_file)
+    retval = True
+    if not zf.is_zipfile(source_file):
         log.warning("\nERROR: Not a valid zip file: " + source_file)
-
+        retval = False
     return retval
