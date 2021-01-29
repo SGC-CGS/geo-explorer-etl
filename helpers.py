@@ -72,10 +72,10 @@ def fix_ref_year(year_str):
     return retval
 
 
-def get_product_defaults(pid):
+def get_product_defaults(pid, pd_path):
     # read json file and return any defaults to be set on product (pid) for indicator metadata
     # examples: default breaks, colours
-    with open("product_defaults.json") as json_file:
+    with open(pd_path) as json_file:
         prod_dict = json.load(json_file)
         if pid in prod_dict:
             prod_defaults = prod_dict[pid]

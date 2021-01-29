@@ -18,7 +18,7 @@ WORK_DIR = str(pathlib.Path(__file__).parent.absolute())  # current script path
 # set up logging to file and console
 logger = logging.getLogger("etl_log")
 logging.basicConfig(format="%(message)s", level=logging.INFO)
-file_handler = logging.handlers.RotatingFileHandler("etl_log.log", maxBytes=2000000, backupCount=5)  # 2MB max 5 backups
+file_handler = logging.handlers.RotatingFileHandler(WORK_DIR + "\\etl_log.log", maxBytes=2000000, backupCount=5)
 log_fmt = logging.Formatter("%(levelname)s:%(message)s - %(asctime)s")
 file_handler.setFormatter(log_fmt)
 logger.addHandler(file_handler)  # for writing to file
@@ -156,7 +156,8 @@ if __name__ == "__main__":
                 logger.info("Updating IndicatorMetadata table.")
                 df_dm = db.get_dimensions_and_members_by_product(pid_str)
                 df_dim_keys = dfh.build_dimension_unique_keys(df_dm)  # from dimensions/dimensionvalues ids
-                df_im = dfh.build_indicator_metadata_df(df_ind, h.get_product_defaults(pid_str), df_dim_keys)
+                df_im = dfh.build_indicator_metadata_df(df_ind, h.get_product_defaults(pid_str, WORK_DIR +
+                                                        "\\product_defaults.json"), df_dim_keys)
                 db.insert_dataframe_rows(df_im, "IndicatorMetaData", "gis")
                 logger.info("Processed " + f"{df_im.shape[0]:,}" + " rows for gis.IndicatorMetadata.\n")
 
