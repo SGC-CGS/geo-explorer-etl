@@ -93,7 +93,7 @@ if __name__ == "__main__":
                 ref_dates = dfh.build_reference_date_list(cube_start_date, cube_end_date, cube_frequency)
 
                 # Indicator
-                next_ind_id = db.get_last_indicator_id() + 1  # setup unique IDs
+                next_ind_id = db.get_last_table_id("IndicatorId", "Indicator", "gis") + 1  # setup unique IDs
                 df_ind = dfh.build_indicator_df(pid, release_date, cube_dimensions, wds.uom_codes, ref_dates,
                                                 next_ind_id)
                 # Indicator data is needed for several other inserts, so send a subset for the insert
@@ -107,6 +107,7 @@ if __name__ == "__main__":
                 total_row_count = 0
                 geo_levels = []  # for building GeographicLevelforIndicator
                 dguid_warnings = []  # for any DGUIDs not found in GeographyReference
+                ref_date_dim = []  # keeps track of all references dates for the false "Date" dimension
                 logger.info("Updating IndicatorValues and GeographyReferenceForIndicator tables.")
                 col_dict = dfh.build_column_and_type_dict(dimensions["en"])  # columns and data types dict
 
@@ -117,12 +118,17 @@ if __name__ == "__main__":
 
                         chunk_data = dfh.setup_chunk_columns(csv_chunk, pid_str, release_date)  # build formatted cols
 
+                        # keep unique reference dates for gis.DimensionValues
+                        ref_date_chunk = chunk_data.loc[:, ["REF_DATE"]]
+                        ref_date_chunk.drop_duplicates(inplace=True)
+                        ref_date_dim.append(ref_date_chunk)
+
                         # keep track of the geographic level for each indicator
                         geo_chunk = chunk_data.loc[:, ["GeographicLevelId", "IndicatorCode"]]
                         geo_levels.append(geo_chunk)
 
                         # gis.IndicatorValues
-                        next_ind_val_id = db.get_last_indicator_value_id() + 1  # set unique IDs
+                        next_ind_val_id = db.get_last_table_id("IndicatorValueId", "IndicatorValues", "gis") + 1  # IDs
                         df_ind_val = dfh.build_indicator_values_df(chunk_data, df_geo_ref, df_ind_null, next_ind_val_id)
                         iv_result = db.insert_dataframe_rows(df_ind_val, "IndicatorValues", "gis")
                         df_ind_val.drop(["VALUE", "NullReasonId"], axis=1, inplace=True)  # save for next insert
@@ -151,6 +157,19 @@ if __name__ == "__main__":
                 df_gli = dfh.build_geographic_level_for_indicator_df(geo_df, df_ind)
                 db.insert_dataframe_rows(df_gli, "GeographicLevelForIndicator", "gis")
                 logger.info("Processed " + f"{df_gli.shape[0]:,}" + " rows for gis.GeographicLevelForIndicator.\n")
+
+                # DimensionValues - from ref_date list created above, add any missing values to false "Date" dimension
+                logger.info("Adding new reference dates to DimensionValues table.")
+                file_ref_dates_df = pd.concat(ref_date_dim).drop_duplicates(inplace=False)  # combine file ref_dates
+                existing_ref_dates_df = db.get_date_dimension_values(pid_str)  # find ref_dates already in db
+                date_dimension_id = db.get_date_dimension_id_for_product(pid_str)  # DimensionId for "Date"
+                next_dim_val_id = db.get_last_table_id("DimensionValueId", "DimensionValues", "gis") + 1  # next ID
+                next_dim_val_display_order = db.get_last_date_dimension_display_order(date_dimension_id) + 1  # next ord
+                df_dv = dfh.build_dimension_values_df(file_ref_dates_df, existing_ref_dates_df, date_dimension_id,
+                                                      next_dim_val_id, next_dim_val_display_order)
+                if df_dv.shape[0] > 0:
+                    db.insert_dataframe_rows(df_dv, "DimensionValues", "gis")
+                logger.info("Added " + f"{df_dv.shape[0]:,}" + " rows for gis.DimensionValues.\n")
 
                 # IndicatorMetadata - defaults come from product_defaults.json
                 logger.info("Updating IndicatorMetadata table.")

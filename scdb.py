@@ -70,12 +70,26 @@ class sqlDb(object):
         return retval
 
     def execute_simple_select_query(self, query):
-        # execute a simple select query (no criteria) and return a single result, or false if no values
+        # execute a simple select query and return a single result, or false if no values
         retval = False
         self.cursor.execute(query)
         results = self.cursor.fetchall()
         if len(results) == 1:
             retval = results[0][0]
+        return retval
+
+    def get_date_dimension_values(self, pid):
+        # return date dimension values from gis.DimensionValues as a pandas dataframe for specified product (pid)
+        query = "SELECT DimensionValueId, DimensionId, Display_EN, Display_FR, ValueDisplayOrder FROM " \
+                "gis.DimensionValues WHERE DimensionId IN (SELECT DimensionId FROM gis.Dimensions WHERE " \
+                "IndicatorThemeId = " + pid + " AND Dimension_EN='Date')"
+        retval = pd.read_sql(query, self.connection)
+        return retval
+
+    def get_date_dimension_id_for_product(self, pid):
+        # return the DimensionId for the false "Date" dimension for specified product (pid)
+        query = "SELECT DimensionId FROM gis.Dimensions WHERE IndicatorThemeId = " + pid + " AND Dimension_EN='Date'"
+        retval = self.execute_simple_select_query(query)
         return retval
 
     def get_dimensions_and_members_by_product(self, pid):
@@ -101,15 +115,18 @@ class sqlDb(object):
         retval = pd.read_sql(query, self.connection)
         return retval
 
-    def get_last_indicator_id(self):
-        # returns highest indicator id in db, or false if none
-        query = "SELECT MAX(IndicatorId) FROM gis.Indicator"
-        retval = self.execute_simple_select_query(query)
+    def get_last_date_dimension_display_order(self, dim_id):
+        # return last ValueDisplayOrder value for the specified dimension id (dim_id), 0 if none found
+        query = "SELECT MAX(ValueDisplayOrder) FROM gis.DimensionValues WHERE DimensionId = " + str(dim_id)
+        self.cursor.execute(query)
+        results = self.cursor.fetchall()
+        retval = results[0][0] if len(results) == 1 else None  # store result
+        retval = 0 if retval is None else retval  # reset to 0 if no value
         return retval
 
-    def get_last_indicator_value_id(self):
-        # returns highest indicator values id in db, or false if none
-        query = "SELECT MAX(IndicatorValueId) FROM gis.IndicatorValues"
+    def get_last_table_id(self, id_field_name, table_name, schema_name):
+        # return highest id for specified field in table (schema_name, table_name, id_field_name), or false if none
+        query = "SELECT MAX(" + id_field_name + ") FROM " + schema_name + "." + table_name
         retval = self.execute_simple_select_query(query)
         return retval
 

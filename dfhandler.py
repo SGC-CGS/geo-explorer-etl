@@ -71,6 +71,33 @@ def build_dimension_ul(ref_year, indicator_name):
     return dim_ul
 
 
+def build_dimension_values_df(fdf, dbdf, dim_id, next_dim_val_id, next_dim_val_order):
+    file_ref_dates_df = fdf
+    existing_ref_dates_df = dbdf
+
+    # join ref_dates from file to those found in the DB (ensure join column is trimmed string)
+    file_ref_dates_df["REF_DATE"] = file_ref_dates_df["REF_DATE"].astype("string").str.strip()
+    existing_ref_dates_df["Display_EN"] = existing_ref_dates_df["Display_EN"].astype("string").str.strip()
+    joined_ref_dates_df = pd.merge(file_ref_dates_df, existing_ref_dates_df, left_on="REF_DATE",
+                                   right_on="Display_EN", how="left")
+    new_ref_dates_df = joined_ref_dates_df[joined_ref_dates_df['DimensionId'].isnull()].copy()  # keeps only new dates
+
+    ret_df = pd.DataFrame()
+    if new_ref_dates_df.shape[0] > 0:
+        # if there are new reference dates, build remaining columns
+        new_ref_dates_df["DimensionValueId"] = h.create_id_series(new_ref_dates_df, next_dim_val_id)
+        new_ref_dates_df["DimensionId"] = dim_id
+        new_ref_dates_df["Display_EN"] = new_ref_dates_df["REF_DATE"]  # duplicate date to FR
+        new_ref_dates_df["Display_FR"] = new_ref_dates_df["Display_EN"]  # duplicate date to FR
+        new_ref_dates_df["ValueDisplayOrder"] = h.create_id_series(new_ref_dates_df, next_dim_val_order)
+
+        # order columns for db insert
+        ret_df = new_ref_dates_df.loc[:, ["DimensionValueId", "DimensionId", "Display_EN", "Display_FR",
+                                          "ValueDisplayOrder"]]
+
+    return ret_df
+
+
 def build_geographic_level_for_indicator_df(gldf, idf):
     # build the data frame for GeographicLevelForIndicator based on dataframe geographic levels abnd indicator codes
     # (gldf) and df of Indicator codes and Ids that were just inserted to the db (idf).
