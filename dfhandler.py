@@ -221,8 +221,12 @@ def build_indicator_df(product_id, release_dt, dim_members, uom_codeset, ref_dat
     ind_df["IndicatorDisplay_EN"] = build_dimension_ul(ind_df["RefYear"], ind_df["IndicatorName_EN"])
     ind_df["IndicatorDisplay_FR"] = build_dimension_ul(ind_df["RefYear"], ind_df["IndicatorName_FR"])
     ind_df["IndicatorId"] = h.create_id_series(ind_df, next_id)  # populate IDs
-    # build field needed later for IndicatorMetaData DimensionUniqueKey matching
+    # build fields needed later for IndicatorMetaData DimensionUniqueKey matching and RelatedCharts
     ind_df["IndicatorFmt"] = ind_df["RefYear"] + "-" + ind_df["IndicatorName_EN"].str.replace(" _ ", "-")
+    ind_df["LastIndicatorMember_EN"] = ind_df.apply(lambda x: get_last_member_from_indicator_name(
+        x["IndicatorName_EN"]), axis=1)
+    ind_df["LastIndicatorMember_FR"] = ind_df.apply(lambda x: get_last_member_from_indicator_name(
+        x["IndicatorName_FR"]), axis=1)
 
     # set datatypes for db
     ind_df["ReleaseIndicatorDate"] = ind_df["ReleaseIndicatorDate"].astype("datetime64[ns]")
@@ -239,30 +243,36 @@ def build_indicator_df_subset(idf):
     return df
 
 
-def build_indicator_metadata_df(idf, prod_defaults, dkdf):
-    # build the data frame for IndicatorMetadata using the indicator dataset (idf),
-    # product defaults (prod_defaults) and unique dimension keys (dkdf)
+def build_indicator_metadata_df(idf, prod_defaults, dkdf, existing_md_df):
+    # Build the data frame for IndicatorMetadata using the indicator dataset (idf), product defaults (prod_defaults)
+    # and unique dimension keys (dkdf). If the metadata for an indicator already exists (existing_meta_data) use it,
+    # otherwise use the product default (prod_defaults).
 
     # formatted indicator names in idf can merged with unique dimension keys data frame
     idf = pd.merge(idf, dkdf, on="IndicatorFmt", how="left")
     check_null_dimension_unique_keys(idf, True)  # notify user of any missing unique dimension keys
-    df_im = idf.loc[:, ["IndicatorId", "UOM_EN", "UOM_FR", "UOM_ID", "DimensionUniqueKey"]]  # subset
+    ind_subset_df = idf.loc[:, ["IndicatorId", "UOM_EN", "UOM_FR", "UOM_ID", "DimensionUniqueKey", "IndicatorCode"]]
+
+    # merge with the df of existing metadata (subsetted).
+    sub_existing_md_df = existing_md_df.loc[:, ["IndicatorCode", "DefaultBreaksAlgorithmId", "DefaultBreaks",
+                                                "PrimaryChartTypeId", "ColorTo", "ColorFrom"]]
+    df_im = pd.merge(ind_subset_df, sub_existing_md_df, on="IndicatorCode", how="left")
 
     # gis.Indicator columns that can be reused for gis.IndicatorMetaData
     df_im["MetaDataId"] = df_im["IndicatorId"]  # duplicate column
     df_im["DefaultRelatedChartId"] = df_im["IndicatorId"]  # duplicate column
     df_im.rename(columns={"UOM_EN": "FieldAlias_EN", "UOM_FR": "FieldAlias_FR", "UOM_ID": "DataFormatId"}, inplace=True)
 
-    # set default metadata for product
-    df_im["DefaultBreaksAlgorithmId"] = prod_defaults["default_breaks_algorithm_id"]
-    df_im["DefaultBreaks"] = prod_defaults["default_breaks"]
-    df_im["PrimaryChartTypeId"] = prod_defaults["primary_chart_type_id"]
-    df_im["ColorTo"] = prod_defaults["color_to"]
-    df_im["ColorFrom"] = prod_defaults["color_from"]
+    # set default metadata for product if no existing metadata exists (value will be None if it does not exist)
+    df_im["DefaultBreaksAlgorithmId"].fillna(prod_defaults["default_breaks_algorithm_id"], inplace=True)
+    df_im["DefaultBreaks"].fillna(prod_defaults["default_breaks"], inplace=True)
+    df_im["PrimaryChartTypeId"].fillna(prod_defaults["primary_chart_type_id"], inplace=True)
+    df_im["ColorTo"].fillna(prod_defaults["color_to"], inplace=True)
+    df_im["ColorFrom"].fillna(prod_defaults["color_from"], inplace=True)
 
     # uom formats are inserted into the primary query
-    df_im["en_format"] = df_im.apply(lambda x: set_uom_format(x["DataFormatId"], "en"), axis=1)
-    df_im["fr_format"] = df_im.apply(lambda x: set_uom_format(x["DataFormatId"], "fr"), axis=1)
+    df_im["en_format"] = df_im.apply(lambda x: set_uom_format(x["DataFormatId"], "en", x["PrimaryChartTypeId"]), axis=1)
+    df_im["fr_format"] = df_im.apply(lambda x: set_uom_format(x["DataFormatId"], "fr", x["PrimaryChartTypeId"]), axis=1)
 
     df_im["PrimaryQuery"] = "SELECT iv.value AS Value, CASE WHEN iv.value IS NULL THEN nr.symbol ELSE " + \
                             df_im["en_format"] + " END AS FormattedValue_EN,  CASE WHEN iv.value IS NULL THEN " \
@@ -356,6 +366,60 @@ def build_reference_date_list(start_str, end_str, freq_code):
     return retval
 
 
+def build_related_charts_df(idf, prod_defaults, existing_md_df):
+    # Build the data frame for RelatedCharts using the indicator dataset (idf). If the metadata for an indicator
+    # already exists (existing_meta_data) use it, otherwise use the product default (prod_defaults).
+
+    ind_subset_df = idf.loc[:, ["IndicatorId", "IndicatorCode", "UOM_ID", "LastIndicatorMember_EN",
+                                "LastIndicatorMember_FR", "UOM_EN", "UOM_FR"]]  # subset to needed fields
+    sub_existing_md_df = existing_md_df.loc[:, ["IndicatorCode", "ChartTypeId", "ChartTitle_EN", "ChartTitle_FR",
+                                                "FieldAlias_EN", "FieldAlias_FR"]]  # subset to needed fields
+    df_rc = pd.merge(ind_subset_df, sub_existing_md_df, on="IndicatorCode", how="left")  # merge with existing metadata
+
+    # gis.Indicator columns that can be reused for gis.RelatedCharts
+    df_rc["RelatedChartId"] = df_rc["IndicatorId"]  # duplicate column
+    df_rc["IndicatorMetaDataId"] = df_rc["IndicatorId"]  # duplicate column
+    df_rc.rename(columns={"UOM_ID": "DataFormatId"}, inplace=True)
+
+    # set defaults for product if no existing metadata exists (value will be None if it does not exist)
+    df_rc["ChartTypeId"].fillna(prod_defaults["related_chart_type_id"], inplace=True)
+    df_rc["ChartTitle_EN"].fillna(df_rc["LastIndicatorMember_EN"], inplace=True)
+    df_rc["ChartTitle_FR"].fillna(df_rc["LastIndicatorMember_FR"], inplace=True)
+    df_rc["FieldAlias_EN"].fillna(df_rc["UOM_EN"], inplace=True)
+    df_rc["FieldAlias_FR"].fillna(df_rc["UOM_FR"], inplace=True)
+
+    # uom formats are inserted into the query field
+    df_rc["en_format"] = df_rc.apply(lambda x: set_uom_format(x["DataFormatId"], "en", x["ChartTypeId"]), axis=1)
+    df_rc["fr_format"] = df_rc.apply(lambda x: set_uom_format(x["DataFormatId"], "fr", x["ChartTypeId"]), axis=1)
+
+    # find default related indicators by building a generic indicator code and then finding all matching ids
+    # these indicator ids will get added to the query that gets saved in the db.
+    df_rc["GenericIndicatorCode"] = df_rc.apply(lambda x: set_generic_indicator_code(x["IndicatorCode"]), axis=1)
+    df_rc["RelatedIndicatorIDs"] = df_rc.apply(lambda x: get_related_indicator_list(x["GenericIndicatorCode"],
+                                                                                    x["IndicatorId"], df_rc), axis=1)
+
+    df_rc["Query"] = "SELECT iv.value AS Value, CASE WHEN iv.value IS NULL THEN nr.symbol ELSE " + df_rc["en_format"] \
+                     + " END AS FormattedValue_EN, CASE WHEN iv.value IS NULL THEN nr.symbol ELSE " + \
+                     df_rc["fr_format"] + " END AS FormattedValue_FR, i.IndicatorName_EN, i.IndicatorName_FR, " \
+                     "nr.Description_EN AS NullDescription_EN, nr.Description_FR AS NullDescription_FR FROM " \
+                     "gis.IndicatorValues AS iv left outer join gis.IndicatorNullReason AS nr on iv.NullReasonId = " \
+                     "nr.NullReasonId INNER JOIN gis.GeographyReferenceForIndicator AS gfri ON iv.indicatorvalueid = " \
+                     "gfri.indicatorvalueid INNER JOIN gis.indicator AS i ON i.indicatorid = gfri.indicatorid WHERE " \
+                     "gfri.indicatorid IN (" + df_rc["RelatedIndicatorIDs"] + ")"
+
+    # set datatypes/lengths for db
+    df_rc["ChartTitle_EN"] = df_rc["ChartTitle_EN"].astype("string").str[:150]
+    df_rc["ChartTitle_FR"] = df_rc["ChartTitle_FR"].astype("string").str[:150]
+    df_rc["Query"] = df_rc["Query"].astype("string").str[:4000]
+    df_rc["FieldAlias_EN"] = df_rc["FieldAlias_EN"].astype("string").str[:150]
+    df_rc["FieldAlias_FR"] = df_rc["FieldAlias_FR"].astype("string").str[:150]
+
+    # Order columns for insert
+    df_rc = df_rc.loc[:, ["RelatedChartId", "ChartTitle_EN", "ChartTitle_FR", "Query", "ChartTypeId",
+                          "IndicatorMetaDataId", "DataFormatId", "FieldAlias_EN", "FieldAlias_FR"]]
+    return df_rc
+
+
 def check_null_dimension_unique_keys(df, show_warnings):
     # notify user if there are any missing DimensionUniqueKeys in the df and show_warnings is true
     missing_keys_df = df[df["DimensionUniqueKey"].isnull()]
@@ -400,18 +464,52 @@ def create_dimension_member_df(dim_members):
     return dm_df
 
 
-def set_uom_format(uom_id, lang):
-    # returns format string for specified uom_id and language (lang)
+def get_last_member_from_indicator_name(indicator_name):
+    # for the given indicator name, pop off and return the last member
+    # Example: "Property with multiple residential units _ Vacant land _ Number of owners"
+    # Becomes: "Number of owners"
+    split_ind = indicator_name.split(" _ ")  # separator between dimensions/members
+    retval = split_ind[-1]
+    return retval
+
+
+def get_related_indicator_list(generic_ind_code, ind_id, idf):
+    # For the specified indicator dataframe (idf), find rows with an IndicatorCode that matches generic_ind_code.
+    # Build a list of the matching IndicatorIDs (exclude the current id), and return the list as a comma
+    # separated string. This is used to find related indicator ids for gis.RelatedCharts.
+    filtered_ind_df = idf.loc[(idf["GenericIndicatorCode"] == generic_ind_code) & (idf["IndicatorId"] != ind_id)]
+    filtered_ind_df["IndicatorId"] = filtered_ind_df["IndicatorId"].astype("string")
+    indicator_id_list = filtered_ind_df["IndicatorId"].tolist()
+    indicator_id_str = ','.join(indicator_id_list)
+    return indicator_id_str
+
+
+def set_generic_indicator_code(ind_code):
+    # Take the indicator code (ind_code), and return a more generic version with the second to last element in
+    # the coordinate replaced by a wildcard character
+    # ex. "13100778.4.1.2.1.2018-01-01" becomes "13100778.4.1.%.1.2018-01-01"
+    split_ind_code = ind_code.split(".")  # returns list of all elements in the indicator code
+    generic_ind_code = None
+    if len(split_ind_code) > 3:  # check for valid code length (at least 2 dimensions in coordinate part of code
+        generic_ind_code = ".".join(split_ind_code[0:len(split_ind_code) - 3]) \
+                           + ".%." + ".".join(split_ind_code[-2:])  # stitch code back together with wildcard inserted
+    return generic_ind_code
+
+
+def set_uom_format(uom_id, lang, chart_type_id):
+    # Returns format string for specified uom_id, language (lang), chart_type_id (1-bar, 2-pie, 3-line)
+    # These formats were selected based on what already existed in the database as built by the powerBI process.
     loc_code = "en-US"
     if lang == "fr":
         loc_code = "fr-CA"
 
-    format_str = "Format(iv.value, 'N', '" + loc_code + "')"  # default
-    if uom_id == 223:
+    # default
+    format_str = "Format(iv.value, 'N', '" + loc_code + "')"
+    if uom_id == 223 or uom_id == 249 or (uom_id == 239 and chart_type_id == 1):
         format_str = "Format(iv.value, 'N0', '" + loc_code + "')"
     elif uom_id == 81:
         format_str = "Format(iv.value, 'C0', '" + loc_code + "')"
-    elif uom_id == 239:
+    elif (uom_id == 239 and chart_type_id == 2) or (uom_id == 279):
         format_str = "Format(iv.value/100, 'P1', '" + loc_code + "')"
     return format_str
 

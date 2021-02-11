@@ -82,8 +82,8 @@ class sqlDb(object):
         # return date dimension values from gis.DimensionValues as a pandas dataframe for specified product (pid)
         query = "SELECT DimensionValueId, DimensionId, Display_EN, Display_FR, ValueDisplayOrder FROM " \
                 "gis.DimensionValues WHERE DimensionId IN (SELECT DimensionId FROM gis.Dimensions WHERE " \
-                "IndicatorThemeId = " + pid + " AND Dimension_EN='Date')"
-        retval = pd.read_sql(query, self.connection)
+                "IndicatorThemeId = ? AND Dimension_EN='Date')"
+        retval = pd.read_sql(query, self.connection, params=[pid])
         return retval
 
     def get_date_dimension_id_for_product(self, pid):
@@ -98,15 +98,25 @@ class sqlDb(object):
                 "dv.ValueDisplayParent, d.IndicatorThemeId, d.Dimension_EN, d.DisplayOrder " \
                 "FROM gis.DimensionValues as dv INNER JOIN gis.Dimensions as d " \
                 "ON dv.DimensionId = d.DimensionId " \
-                "WHERE d.IndicatorThemeId = " + pid + \
+                "WHERE d.IndicatorThemeId = ? " \
                 "ORDER BY DisplayOrder, ValueDisplayOrder"
-        retval = pd.read_sql(query, self.connection)
+        retval = pd.read_sql(query, self.connection, params=[pid])
         return retval
 
     def get_geo_reference_ids(self):
         # return all ids from gis.GeographyReference as a pandas dataframe
         query = "SELECT GeographyReferenceId FROM gis.GeographyReference"
         retval = pd.read_sql(query, self.connection)
+        return retval
+
+    def get_indicator_chart_info(self, pid):
+        # return chart information from gis.IndicatorMetaData and gis.RelatedCharts for the specified product (pid)
+        query = "SELECT i.IndicatorThemeId, i.IndicatorCode, im.DefaultBreaksAlgorithmId, im.DefaultBreaks, " \
+                "im.PrimaryChartTypeId ,im.ColorTo ,im.ColorFrom, r.ChartTypeId, r.ChartTitle_EN, r.ChartTitle_FR, " \
+                "r.FieldAlias_EN, r.FieldAlias_FR FROM gis.Indicator AS i LEFT JOIN gis.IndicatorMetaData AS im ON " \
+                "i.IndicatorId=im.IndicatorId LEFT JOIN gis.RelatedCharts AS r ON im.IndicatorId = r.RelatedChartId " \
+                "WHERE IndicatorThemeId = ? "
+        retval = pd.read_sql(query, self.connection, params=[pid])
         return retval
 
     def get_indicator_null_reason(self):
@@ -117,8 +127,8 @@ class sqlDb(object):
 
     def get_last_date_dimension_display_order(self, dim_id):
         # return last ValueDisplayOrder value for the specified dimension id (dim_id), 0 if none found
-        query = "SELECT MAX(ValueDisplayOrder) FROM gis.DimensionValues WHERE DimensionId = " + str(dim_id)
-        self.cursor.execute(query)
+        query = "SELECT MAX(ValueDisplayOrder) FROM gis.DimensionValues WHERE DimensionId = ?"
+        self.cursor.execute(query, dim_id)
         results = self.cursor.fetchall()
         retval = results[0][0] if len(results) == 1 else None  # store result
         retval = 0 if retval is None else retval  # reset to 0 if no value

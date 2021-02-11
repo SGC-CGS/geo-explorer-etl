@@ -14,6 +14,7 @@ import sys
 import zipfile
 
 WORK_DIR = str(pathlib.Path(__file__).parent.absolute())  # current script path
+default_chart_json = WORK_DIR + "\\product_defaults.json"  # default chart info for specific products
 
 # set up logging to file and console
 logger = logging.getLogger("etl_log")
@@ -69,6 +70,10 @@ if __name__ == "__main__":
         if wds.get_full_table_download(pid, "en", pid_folder + ".zip") and h.valid_zip_file(pid_folder + ".zip"):
             logger.info("Updating Product ID: " + pid_str + "\n")
 
+            # Get any existing product metadata related to charts from the db
+            # This is so we can preserve any manual chart configuration that already exists when appending data.
+            existing_ind_chart_meta_data = db.get_indicator_chart_info(pid_str)
+
             # delete product in database
             if db.delete_product(pid):
 
@@ -96,10 +101,11 @@ if __name__ == "__main__":
                 next_ind_id = db.get_last_table_id("IndicatorId", "Indicator", "gis") + 1  # setup unique IDs
                 df_ind = dfh.build_indicator_df(pid, release_date, cube_dimensions, wds.uom_codes, ref_dates,
                                                 next_ind_id)
-                # Indicator data is needed for several other inserts, so send a subset for the insert
+                # Indicator data is needed for several other inserts, so send a subset for the insert and keep
+                # only those fields needed for next inserts.
                 db.insert_dataframe_rows(dfh.build_indicator_df_subset(df_ind), "Indicator", "gis")
                 df_ind = df_ind.loc[:, ["IndicatorId", "IndicatorCode", "IndicatorFmt", "UOM_EN", "UOM_FR",
-                                        "UOM_ID"]]  # needed for next round of updates
+                                        "UOM_ID", "LastIndicatorMember_EN", "LastIndicatorMember_FR"]]
 
                 logger.info("Reading zip file as chunks: " + pid_csv_path + "\n")
                 iv_row_count = 0
@@ -171,13 +177,20 @@ if __name__ == "__main__":
                     db.insert_dataframe_rows(df_dv, "DimensionValues", "gis")
                 logger.info("Added " + f"{df_dv.shape[0]:,}" + " rows for gis.DimensionValues.\n")
 
-                # IndicatorMetadata - defaults come from product_defaults.json
+                # IndicatorMetadata
                 logger.info("Updating IndicatorMetadata table.")
                 df_dm = db.get_dimensions_and_members_by_product(pid_str)
                 df_dim_keys = dfh.build_dimension_unique_keys(df_dm)  # from dimensions/dimensionvalues ids
-                df_im = dfh.build_indicator_metadata_df(df_ind, h.get_product_defaults(pid_str, WORK_DIR +
-                                                        "\\product_defaults.json"), df_dim_keys)
+                df_im = dfh.build_indicator_metadata_df(df_ind, h.get_product_defaults(pid_str, default_chart_json),
+                                                        df_dim_keys, existing_ind_chart_meta_data)
                 db.insert_dataframe_rows(df_im, "IndicatorMetaData", "gis")
                 logger.info("Processed " + f"{df_im.shape[0]:,}" + " rows for gis.IndicatorMetadata.\n")
+
+                # RelatedCharts
+                logger.info("Updating RelatedCharts table.")
+                df_rc = dfh.build_related_charts_df(df_ind, h.get_product_defaults(pid_str, default_chart_json),
+                                                    existing_ind_chart_meta_data)
+                db.insert_dataframe_rows(df_rc, "RelatedCharts", "gis")
+                logger.info("Processed " + f"{df_rc.shape[0]:,}" + " rows for gis.RelatedCharts.")
 
     logger.info("\nETL Process End: " + str(datetime.now()))
