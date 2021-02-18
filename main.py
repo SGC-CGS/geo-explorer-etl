@@ -173,6 +173,7 @@ if __name__ == "__main__":
                 df_gli = dfh.build_geographic_level_for_indicator_df(geo_df, df_ind)
                 db.insert_dataframe_rows(df_gli, "GeographicLevelForIndicator", "gis")
                 logger.info("Processed " + f"{df_gli.shape[0]:,}" + " rows for gis.GeographicLevelForIndicator.\n")
+                del df_gli
 
                 # DimensionValues - from ref_date list created above, add any missing values to false "Date" dimension
                 logger.info("Adding new reference dates to DimensionValues table.")
@@ -186,6 +187,7 @@ if __name__ == "__main__":
                 if df_dv.shape[0] > 0:
                     db.insert_dataframe_rows(df_dv, "DimensionValues", "gis")
                 logger.info("Added " + f"{df_dv.shape[0]:,}" + " rows for gis.DimensionValues.\n")
+                del df_dv
 
                 # IndicatorMetadata
                 logger.info("Updating IndicatorMetadata table.")
@@ -195,6 +197,7 @@ if __name__ == "__main__":
                                                         df_dim_keys, existing_ind_chart_meta_data)
                 db.insert_dataframe_rows(df_im, "IndicatorMetaData", "gis")
                 logger.info("Processed " + f"{df_im.shape[0]:,}" + " rows for gis.IndicatorMetadata.\n")
+                del df_im
 
                 # RelatedCharts
                 logger.info("Updating RelatedCharts table.")
@@ -202,5 +205,6 @@ if __name__ == "__main__":
                                                     existing_ind_chart_meta_data)
                 db.insert_dataframe_rows(df_rc, "RelatedCharts", "gis")
                 logger.info("Processed " + f"{df_rc.shape[0]:,}" + " rows for gis.RelatedCharts.")
+                del df_rc
 
     logger.info("\nETL Process End: " + str(datetime.now()))

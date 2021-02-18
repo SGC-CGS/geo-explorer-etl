@@ -439,7 +439,7 @@ def check_null_dimension_unique_keys(df, show_warnings):
     missing_keys_df = df[df["DimensionUniqueKey"].isnull()]
     if show_warnings and missing_keys_df.shape[0] > 0:
         log.warning("\n***WARNING***\nDimensionUniqueKey could not be matched for the following indicators:")
-        with pd.option_context('display.max_rows', None):
+        with pd.option_context('display.max_rows', None, 'display.max_columns', None):
             log.warning(missing_keys_df)
         log.warning("*************\n")
     return
@@ -570,7 +570,7 @@ def write_dguid_warning(dguid_df):
     if dguid_df.shape[0] > 0:
         msg = "***WARNING***\nThe following DGUIDs were not found in gis.GeographyReference and cannot be added to " \
               "the database.\nAny values other than <NA>/NaN should be investigated.\n"
-        with pd.option_context('display.max_rows', None):
+        with pd.option_context('display.max_rows', None, 'display.max_columns', None):
             msg += dguid_df["DGUID"].to_string(index=False)  # if the DGUID is <NA>, then there is no problem
         msg += "\n*************\n"
     else:
