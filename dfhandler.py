@@ -46,7 +46,9 @@ def build_dimension_unique_keys(dmf):
     for index, row in dmf.iterrows():
         dim_id = row["DimensionId"]
         mem_id = row["DimensionValueId"]
-        mem_name = re.sub(r"^([^.]+\.)", "", row["Display_EN"]).lstrip()  # "02. Resident owners only" -->removes "02. "
+        # regex below handles cases where a sorting prefix has been added to a dimension/member
+        patt = r"^(?:(?:0){0,3}[0-9]|(?:0){0,2}[1-9][0-9]|(?:0){0,1}[1-9][0-9][0-9])\."  # regex match for 0. to 1000.
+        mem_name = re.sub(patt, "", row["Display_EN"]).lstrip()  # "02. Resident owners only" -->removes "02. "
 
         if dim_id not in dim_mem_names:
             dim_mem_names[dim_id] = []
@@ -440,6 +442,7 @@ def check_null_dimension_unique_keys(df, show_warnings):
     if show_warnings and missing_keys_df.shape[0] > 0:
         log.warning("\n***WARNING***\nDimensionUniqueKey could not be matched for the following indicators:")
         with pd.option_context('display.max_rows', None, 'display.max_columns', None):
+            missing_keys_df = missing_keys_df.loc[:, ["IndicatorId", "IndicatorCode"]]
             log.warning(missing_keys_df)
         log.warning("*************\n")
     return
