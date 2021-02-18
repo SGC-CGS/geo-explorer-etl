@@ -12,6 +12,17 @@ log = logging.getLogger("etl_log")
 log.addHandler(logging.NullHandler())
 
 
+def add_related_chart_indicator_ids(rcdf):  # TODO -- this function is incomplete
+    # for a dataframe with related chart data (rcdf), extract the indicator ids from the "Query" column.
+    # These indicator ids will be added as a list in a new column and a new df is returned.
+    new_rc_df = rcdf
+    # example code: (from another proc, need to update this.)
+    # "02. Resident owners only" -->removes "02. "
+    # new_rc_df["newcol"] = re.sub(r"^([^.]+\.)", "", row["Display_EN"]).lstrip()
+
+    return new_rc_df
+
+
 def build_column_and_type_dict(dimensions):
     # set up the dicionary of columns and data types for pandas df, then add columns listed in dimensions as str types
     # Note: All strings as object type by default. Categories are more efficient for string fields if there are < 50%
@@ -108,12 +119,14 @@ def build_geographic_level_for_indicator_df(gldf, idf):
 
     df_gli = pd.merge(df_gli, idf, on="IndicatorCode", how="left")  # join datasets
     df_gli.drop(["IndicatorCode"], axis=1, inplace=True)  # no longer need col
-    df_gli.dropna(inplace=True)  # remove any row w/ empty value
+    df_gli.dropna(inplace=True)  # remove any row w/ na
+    df_gli = df_gli.loc[(df_gli.GeographicLevelId != "")]  # remove any row w/ empty geolevel
 
     # every IndicatorID needs a row added with GeographicLevel = "SSSS" (for web display)
     df_web_inds = df_gli.loc[:, ["IndicatorId"]].drop_duplicates(inplace=False)
     df_web_inds["GeographicLevelId"] = "SSSS"
     df_gli = df_gli.append(df_web_inds)
+    del df_web_inds
 
     df_gli = df_gli.loc[:, ["IndicatorId", "GeographicLevelId"]]  # column order needeed for db insert
     return df_gli
@@ -257,6 +270,7 @@ def build_indicator_metadata_df(idf, prod_defaults, dkdf, existing_md_df):
     sub_existing_md_df = existing_md_df.loc[:, ["IndicatorCode", "DefaultBreaksAlgorithmId", "DefaultBreaks",
                                                 "PrimaryChartTypeId", "ColorTo", "ColorFrom"]]
     df_im = pd.merge(ind_subset_df, sub_existing_md_df, on="IndicatorCode", how="left")
+    df_im.drop_duplicates(subset="IndicatorId", keep="first", inplace=True)
 
     # gis.Indicator columns that can be reused for gis.IndicatorMetaData
     df_im["MetaDataId"] = df_im["IndicatorId"]  # duplicate column
@@ -473,6 +487,19 @@ def get_last_member_from_indicator_name(indicator_name):
     return retval
 
 
+def fix_dguid(vintage, orig_dguid, is_crime_table):
+    # verify that the dguid is valid. If it isn't, try to build a new one. For now this only applies to tables
+    # flagged as a crime table. Format: VVVVTSSSSGGGGGGGGGGGG (V-vintage(4), T-type(1), S-schema(4), G-GUID(1-12)
+    new_dguid = str(orig_dguid)
+    if is_crime_table and len(orig_dguid) < 10:
+        geo_type_schema = 'A0025'
+        if int(vintage) < 2016:  # special case from crime tables --> 1998-2015 use 2016 geographies.
+            new_dguid = '2016' + geo_type_schema + orig_dguid
+        else:
+            new_dguid = str(vintage) + geo_type_schema + orig_dguid
+    return new_dguid
+
+
 def get_related_indicator_list(generic_ind_code, ind_id, idf):
     # For the specified indicator dataframe (idf), find rows with an IndicatorCode that matches generic_ind_code.
     # Build a list of the matching IndicatorIDs (exclude the current id), and return the list as a comma
@@ -514,15 +541,19 @@ def set_uom_format(uom_id, lang, chart_type_id):
     return format_str
 
 
-def setup_chunk_columns(cdf, prod_id_str, rel_date):
+def setup_chunk_columns(cdf, prod_id_str, rel_date, is_crime_table):
     # set up the columns in a dataframe chunk of data from the csv file (cdf) for the specified product (prod_id_str)
-    # and release date (rel_date)
+    # and release date (rel_date). is_crime_table indicates whether it is one of the crime tables.
     chunk_df = cdf
     chunk_df["IndicatorCode"] = build_indicator_code(chunk_df["COORDINATE"], chunk_df["REF_DATE"], prod_id_str)
     chunk_df.drop(["COORDINATE"], axis=1, inplace=True)  # not nec. after IndicatorCode
     chunk_df.rename(columns={"VECTOR": "Vector", "UOM": "UOM_EN"}, inplace=True)  # match db
-    chunk_df["DGUID"] = chunk_df["DGUID"].str.replace(".", "").str.replace("201A", "2015A")  # from powerBI process
     chunk_df["RefYear"] = chunk_df["REF_DATE"].map(h.fix_ref_year).astype("string")  # need 4 digit year
+
+    chunk_df["DGUID"] = chunk_df["DGUID"].str.replace(".", "").str.replace("201A", "2015A")  # from powerBI process
+    # some DGUIDs are not built properly in the dataset (ex. crime statistics) - fix these
+    chunk_df["DGUID"] = chunk_df.apply(lambda x: fix_dguid(x["RefYear"], x["DGUID"], is_crime_table), axis=1)
+
     chunk_df["IndicatorThemeID"] = prod_id_str
     chunk_df["ReleaseIndicatorDate"] = rel_date
     chunk_df["ReferencePeriod"] = chunk_df["RefYear"] + "-01-01"  # becomes Jan 1

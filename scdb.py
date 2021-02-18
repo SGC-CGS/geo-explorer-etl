@@ -113,9 +113,9 @@ class sqlDb(object):
         # return chart information from gis.IndicatorMetaData and gis.RelatedCharts for the specified product (pid)
         query = "SELECT i.IndicatorThemeId, i.IndicatorCode, im.DefaultBreaksAlgorithmId, im.DefaultBreaks, " \
                 "im.PrimaryChartTypeId ,im.ColorTo ,im.ColorFrom, r.ChartTypeId, r.ChartTitle_EN, r.ChartTitle_FR, " \
-                "r.FieldAlias_EN, r.FieldAlias_FR FROM gis.Indicator AS i LEFT JOIN gis.IndicatorMetaData AS im ON " \
-                "i.IndicatorId=im.IndicatorId LEFT JOIN gis.RelatedCharts AS r ON im.IndicatorId = r.RelatedChartId " \
-                "WHERE IndicatorThemeId = ? "
+                "r.FieldAlias_EN, r.FieldAlias_FR, r.Query FROM gis.Indicator AS i LEFT JOIN gis.IndicatorMetaData " \
+                "AS im ON i.IndicatorId=im.IndicatorId LEFT JOIN gis.RelatedCharts AS r ON im.IndicatorId = " \
+                "r.RelatedChartId WHERE IndicatorThemeId = ? "
         retval = pd.read_sql(query, self.connection, params=[pid])
         return retval
 

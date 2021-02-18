@@ -16,6 +16,9 @@ import zipfile
 WORK_DIR = str(pathlib.Path(__file__).parent.absolute())  # current script path
 default_chart_json = WORK_DIR + "\\product_defaults.json"  # default chart info for specific products
 
+# list of crime tables for special handling -- this should be cleaned up later
+crime_tables = [35100177, 35100178, 35100179, 35100180, 35100181, 35100182, 35100183, 35100184, 35100185]
+
 # set up logging to file and console
 logger = logging.getLogger("etl_log")
 logging.basicConfig(format="%(message)s", level=logging.INFO)
@@ -66,6 +69,8 @@ if __name__ == "__main__":
         pid_folder = WORK_DIR + "\\" + pid_str + "-en"
         pid_csv_path = pid_folder + "\\" + pid_str + ".csv"
 
+        is_crime_table = True if int(pid) in crime_tables else False  # crime stats tables have some special handling
+
         # Download the product tables
         if wds.get_full_table_download(pid, "en", pid_folder + ".zip") and h.valid_zip_file(pid_folder + ".zip"):
             logger.info("Updating Product ID: " + pid_str + "\n")
@@ -73,6 +78,8 @@ if __name__ == "__main__":
             # Get any existing product metadata related to charts from the db
             # This is so we can preserve any manual chart configuration that already exists when appending data.
             existing_ind_chart_meta_data = db.get_indicator_chart_info(pid_str)
+            # extract the indicator ids from the related charts - TODO
+            # existing_ind_chart_meta_data = dfh.add_related_chart_indicator_ids(existing_ind_chart_meta_data)
 
             # delete product in database
             if db.delete_product(pid):
@@ -98,6 +105,7 @@ if __name__ == "__main__":
                 ref_dates = dfh.build_reference_date_list(cube_start_date, cube_end_date, cube_frequency)
 
                 # Indicator
+                logger.info("Updating Indicator table.")
                 next_ind_id = db.get_last_table_id("IndicatorId", "Indicator", "gis") + 1  # setup unique IDs
                 df_ind = dfh.build_indicator_df(pid, release_date, cube_dimensions, wds.uom_codes, ref_dates,
                                                 next_ind_id)
@@ -106,6 +114,7 @@ if __name__ == "__main__":
                 db.insert_dataframe_rows(dfh.build_indicator_df_subset(df_ind), "Indicator", "gis")
                 df_ind = df_ind.loc[:, ["IndicatorId", "IndicatorCode", "IndicatorFmt", "UOM_EN", "UOM_FR",
                                         "UOM_ID", "LastIndicatorMember_EN", "LastIndicatorMember_FR"]]
+                logger.info("Processed " + f"{df_ind.shape[0]:,}" + " rows for gis.Indicator.\n")
 
                 logger.info("Reading zip file as chunks: " + pid_csv_path + "\n")
                 iv_row_count = 0
@@ -122,7 +131,8 @@ if __name__ == "__main__":
                                                  usecols=list(col_dict.keys()),
                                                  dtype=col_dict):  # do not set compression flag - causes badzip error
 
-                        chunk_data = dfh.setup_chunk_columns(csv_chunk, pid_str, release_date)  # build formatted cols
+                        # build formatted cols
+                        chunk_data = dfh.setup_chunk_columns(csv_chunk, pid_str, release_date, is_crime_table)
 
                         # keep unique reference dates for gis.DimensionValues
                         ref_date_chunk = chunk_data.loc[:, ["REF_DATE"]]
