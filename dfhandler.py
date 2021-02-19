@@ -264,7 +264,9 @@ def build_indicator_metadata_df(idf, prod_defaults, dkdf, existing_md_df):
     # otherwise use the product default (prod_defaults).
 
     # formatted indicator names in idf can merged with unique dimension keys data frame
-    idf = pd.merge(idf, dkdf, on="IndicatorFmt", how="left")
+    idf["IndicatorFmt_Lower"] = idf["IndicatorFmt"].str.lower()  # prevents case sensitivity issues during merge
+    dkdf["IndicatorFmt_Lower"] = dkdf["IndicatorFmt"].str.lower()
+    idf = pd.merge(idf, dkdf, on="IndicatorFmt_Lower", how="left")
     check_null_dimension_unique_keys(idf, True)  # notify user of any missing unique dimension keys
     ind_subset_df = idf.loc[:, ["IndicatorId", "UOM_EN", "UOM_FR", "UOM_ID", "DimensionUniqueKey", "IndicatorCode"]]
 
