@@ -10,26 +10,6 @@ log = logging.getLogger("etl_log")
 log.addHandler(logging.NullHandler())
 
 
-def check_valid_parse_args(parsed_args):
-    # check the parsed arguments to see if they are valid. Returns status message if issues, otherwise "".
-    # Note data type validation is done when the argument is created.
-    ret_msg = ""
-    if parsed_args.start and parsed_args.end and not parsed_args.prodid:
-        if parsed_args.end < parsed_args.start:
-            ret_msg = "Start date must be before end date. Please check the date parameters and try again."
-    elif parsed_args.prodid and (parsed_args.start or parsed_args.end):
-        ret_msg = "Product ID search cannot be combined with start/end dates."
-    elif (parsed_args.start and not parsed_args.end) or (not parsed_args.start and parsed_args.end):
-        ret_msg = "Start and end date must both be present to look up products within a date range."
-    elif not parsed_args.start and not parsed_args.end and not parsed_args.prodid:
-        ret_msg = "No arguments were received."
-    if ret_msg != "":
-        ret_msg = "\n" + ret_msg + "\nValid arguments are:"
-        ret_msg += "\n1. --start YYYY-MM-DD and --end YYYY-MM-DD to update tables within a specified date range."
-        ret_msg += "\n2. --prodid 12345678 to update a specified table (replace 12345678 with product ID)."
-    return ret_msg
-
-
 def convert_ref_year_to_date(ref_per):
     # if only year is given, set to Jan 1 for db
 

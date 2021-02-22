@@ -1,7 +1,8 @@
 # Download updated product data from WDS and update database
-import argparse  # for processing arguments passed
+# import argparse  # for processing arguments passed
+import arguments  # for parsing CLI arguments
 import config as cfg  # configuration
-from datetime import datetime, date
+from datetime import datetime
 import dfhandler as dfh  # for altering pandas data frames
 import helpers as h  # helper functions
 import logging
@@ -27,19 +28,17 @@ log_fmt = logging.Formatter("%(levelname)s:%(message)s - %(asctime)s")
 file_handler.setFormatter(log_fmt)
 logger.addHandler(file_handler)  # for writing to file
 
-# look for valid arguments passed to script
-parser = argparse.ArgumentParser()
-parser.add_argument("--start", type=date.fromisoformat, help="Start date when looking for product updates YYYY-MM-DD")
-parser.add_argument("--end",  type=date.fromisoformat, help="End date when looking for product updates YYYY-MM-DD")
-parser.add_argument("--prodid", type=int, help="Product ID to update (no special characters)")
-args = parser.parse_args()
-arg_status = h.check_valid_parse_args(args)
+# get CLI arguments
+arg = arguments.argParser()
+arg_status = arg.check_valid_parse_args()
 if arg_status != "":
-    logger.error(arg_status)
+    logger.error("\nArgument Error: " + arg_status)
+    arg.parser.print_help()
     sys.exit()
-start_date = args.start if args.start else False
-end_date = args.end if args.end else False
-prod_id = args.prodid if args.prodid else False
+start_date = arg.get_arg_value("start")
+end_date = arg.get_arg_value("end")
+prod_id = arg.get_arg_value("prodid")
+insert_new_table = arg.get_arg_value("insert_new_table")
 
 if __name__ == "__main__":
 
