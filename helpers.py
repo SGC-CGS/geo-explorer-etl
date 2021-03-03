@@ -1,7 +1,9 @@
 # helper functions
 import datetime as dt
+import gc  # for garbage collection
 import json
 import logging
+from logging.handlers import RotatingFileHandler
 import pandas as pd
 import zipfile as zf
 
@@ -34,6 +36,14 @@ def daterange(date1, date2):
     return retval
 
 
+# noinspection PyUnusedLocal
+def delete_var_and_release_mem(var_names):
+    # delete each variable in list and recover memory
+    for var_name in var_names:
+        del var_name
+    gc.collect()
+
+
 def fix_ref_year(year_str):
     # handle abnormal year formats in reference periods
     year_str = str(year_str)
@@ -55,13 +65,28 @@ def fix_ref_year(year_str):
 def get_product_defaults(pid, pd_path):
     # read json file and return any defaults to be set on product (pid) for indicator metadata
     # examples: default breaks, colours
-    with open(pd_path) as json_file:
-        prod_dict = json.load(json_file)
-        if pid in prod_dict:
-            prod_defaults = prod_dict[pid]
-        else:
-            prod_defaults = prod_dict["default"]
-        return prod_defaults
+    prod_dict = load_json_file(pd_path)
+    if pid in prod_dict:
+        prod_defaults = prod_dict[pid]
+    else:
+        prod_defaults = prod_dict["default"]
+    return prod_defaults
+
+
+def get_subject_desc_from_code_set(subject_code, subject_codeset, lang):
+    # retrieve unit of measure description for the specified subject_code and language (lang)
+    retval = ""
+    field_name = "subjectEn"
+    if lang == "fr":
+        field_name = "subjectFr"
+
+    subject_code = str(subject_code)
+    if subject_code != "":
+        retval = next(
+            (row[field_name]
+             for row in subject_codeset
+             if row["subjectCode"] == subject_code), None)
+    return retval
 
 
 def get_years_range(dt_range):
@@ -89,10 +114,50 @@ def get_uom_desc_from_code_set(uom_code, uom_codeset, lang):
     return retval
 
 
+def load_json_file(pd_path):
+    # read json file and return dictionary
+    try:
+        with open(pd_path) as json_file:
+            json_data = json.load(json_file)
+    except IOError:
+        json_data = {}
+    return json_data
+
+
+def setup_logger(work_dir, log_name):
+    logger = logging.getLogger(log_name)
+    logging.getLogger("etl_log")
+    logging.basicConfig(format="%(message)s", level=logging.INFO)
+    fh = logging.handlers.RotatingFileHandler(work_dir + "\\" + log_name + ".log", maxBytes=2000000, backupCount=5)
+    log_fmt = logging.Formatter("%(levelname)s:%(message)s - %(asctime)s")
+    fh.setFormatter(log_fmt)
+    logger.addHandler(fh)  # for writing to file
+    return logger
+
+
+def update_merge_products_json(indicator_theme_id, merge_prod_ids, mp_path):
+    # open the merge products json file (json_file) and update the dictionary of merged product ids (merge_prod_ids)
+    merge_dict = load_json_file(mp_path)
+    merge_dict[str(indicator_theme_id)] = {"linked_tables": [str(i) for i in merge_prod_ids]}  # all to strings for json
+    retval = write_json_file(merge_dict, mp_path)
+    return retval
+
+
 def valid_zip_file(source_file):
     log.info("Checking " + source_file)
     retval = True
     if not zf.is_zipfile(source_file):
         log.warning("\nERROR: Not a valid zip file: " + source_file)
+        retval = False
+    return retval
+
+
+def write_json_file(jdict, pd_path):
+    # write dictionary (jdict) to json file
+    retval = True
+    try:
+        with open(pd_path, "w") as json_file:
+            json.dump(jdict, json_file, indent=4)  # formatted json file
+    except IOError:
         retval = False
     return retval
