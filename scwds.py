@@ -1,10 +1,36 @@
 # WDS class
+from datetime import datetime
 import logging
 import requests
 
 # set up logger if available
 log = logging.getLogger("etl_log")
 log.addHandler(logging.NullHandler())
+
+
+def build_metadata_dict(prod_metadata):
+    # build dictionary of metadata from get_cube_metadata results (prod_metadata), add default values where needed
+
+    # set up default dates
+    cur_date_fmt = datetime.today().strftime("%Y-%m-%d")  # 2021-01-21
+    cur_date_iso = datetime.today().isoformat(timespec="minutes")  # ex. 2020-12-11T10:11
+
+    # Get the product metadata
+    metadata_dict = {
+        "dimension_names": get_metadata_dimension_names(prod_metadata, True),
+        "release_date": get_metadata_field(prod_metadata, "releaseTime", cur_date_iso),
+        "start_date": get_metadata_field(prod_metadata, "cubeStartDate", cur_date_fmt),
+        "end_date": get_metadata_field(prod_metadata, "cubeEndDate", cur_date_fmt),
+        "freq": get_metadata_field(prod_metadata, "frequencyCode", 12),  # default annual
+        "dimensions_and_members": get_metadata_field(prod_metadata, "dimension", [{}]),
+        "title_en": get_metadata_field(prod_metadata, "cubeTitleEn", ""),
+        "title_fr": get_metadata_field(prod_metadata, "cubeTitleFr", ""),
+        "survey_code": get_metadata_field(prod_metadata, "surveyCode", None),
+        "subject_code": get_metadata_field(prod_metadata, "subjectCode", None),
+        "subject_code_short": ""
+    }
+    metadata_dict["subject_code_short"] = metadata_dict["subject_code"][:2]  # initial subject code can be > 2 chars
+    return metadata_dict
 
 
 def get_metadata_dimension_names(metadata, ignore_geo):
@@ -28,9 +54,12 @@ def get_metadata_field(metadata, field_name, default_value):
     # if not available, return default (default_value)
     retval = default_value
     if field_name in metadata:
-        retval = metadata[field_name]
+        if isinstance(metadata[field_name], list) and field_name in ["surveyCode", "subjectCode"]:
+            retval = metadata[field_name][0]  # return first value for specified list fields
+        else:
+            retval = metadata[field_name]
     else:
-        print("Could not release find " + field_name + " in the cube metadata.")
+        log.warning("Could not find " + field_name + " in the cube metadata.")
     return retval
 
 
@@ -142,7 +171,7 @@ class serviceWds(object):
                     elif set_type == "subject":
                         self.subject_codes = resp["object"][set_type]
                     elif set_type == "classificationType":
-                        self.subject_codes = resp["object"][set_type]
+                        self.classification_type_codes = resp["object"][set_type]
                     elif set_type == "securityLevel":
                         self.security_level_codes = resp["object"][set_type]
                     elif set_type == "terminated":
