@@ -34,8 +34,6 @@ class sqlDb(object):
         # Note: We are not deleting the data from Dimensions, DimensionValues, or IndicatorTheme
         retval = False
         pid = str(product_id)
-        log.info("Deleting product " + pid + " from database.")
-        log.info("Note: Data will NOT be deleted from Dimensions, DimensionValues, or IndicatorTheme.")
         pid_subqry = "SELECT IndicatorId FROM gis.Indicator WHERE IndicatorThemeId = ? "
         qry1 = "DELETE FROM gis.RelatedCharts WHERE RelatedChartId IN (" + pid_subqry + ") "
         qry2 = "DELETE FROM gis.IndicatorMetaData WHERE IndicatorId IN (" + pid_subqry + ") "
@@ -138,15 +136,16 @@ class sqlDb(object):
         # return highest id for specified field in table (schema_name, table_name, id_field_name), or false if none
         query = "SELECT MAX(" + id_field_name + ") FROM " + schema_name + "." + table_name
         retval = self.execute_simple_select_query(query)
+        retval = 0 if retval is None else retval
         return retval
 
-    def get_matching_product_list(self, changed_products):
-        # returns list of product ids that match changed_products list
+    def get_matching_product_list(self, product_list):
+        # returns list of product ids that match product_list
         retval = []
-        if len(changed_products) > 0:
-            in_clause = ', '.join(map(str, changed_products))  # flatten list
-            query = "SELECT DISTINCT IndicatorThemeID FROM gis.IndicatorTheme " \
-                    "WHERE IndicatorThemeID IN (" + in_clause + ")"
+        if product_list and len(product_list) > 0:
+            in_clause = ', '.join(map(str, product_list))  # flatten list
+            query = "SELECT DISTINCT IndicatorThemeID FROM gis.IndicatorTheme WHERE IndicatorThemeID IN (" + \
+                    in_clause + ")"
             self.cursor.execute(query)
             results = self.cursor.fetchall()
             for prod in results:
