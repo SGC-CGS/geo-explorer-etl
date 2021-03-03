@@ -1,7 +1,8 @@
-# for processing CLI arguments
+# for handling CLI arguments
 import argparse
 from datetime import date
 import logging
+import sys
 
 # set up logger if available
 log = logging.getLogger("etl_log")
@@ -21,7 +22,8 @@ class argParser(object):
                                  help="Product ID to create or update (no special characters). If inserting a new "
                                       "product, several Product IDs can be specified (separated by spaces) to merge "
                                       "into a single product. If products are merged, the first Product ID entered "
-                                      "will become the new Indicator Theme ID for all merged data.")
+                                      "will become the new Indicator Theme ID for all merged data. All merged products "
+                                      "must have the same dimension/member structure.")
         self.args = self.parser.parse_args()
 
     def check_valid_parse_args(self):
@@ -51,3 +53,9 @@ class argParser(object):
         ret_val = getattr(self.args, arg_name, False)
         ret_val = ret_val if ret_val is not None else False  # if none reset to false
         return ret_val
+
+    def show_help_and_exit_with_msg(self, msg):
+        # log message (msg) and exit the program
+        log.error("Error: " + msg)
+        self.parser.print_help()
+        sys.exit()
