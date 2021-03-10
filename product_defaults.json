@@ -53,7 +53,7 @@
     "primary_chart_type_id": 1,
     "color_to": "183,28,28,255",
     "color_from": "255,224,178,255",
-    "related_chart_type_id": 2
+    "related_chart_type_id": 1
   },
   "23100286": {
     "default_breaks_algorithm_id": 2,
@@ -149,7 +149,7 @@
     "primary_chart_type_id": 1,
     "color_to": "38,50,56,255",
     "color_from": "207,216,220,255",
-    "related_chart_type_id": 2
+    "related_chart_type_id": 1
   },
   "46100019": {
     "default_breaks_algorithm_id": 2,
@@ -157,7 +157,7 @@
     "primary_chart_type_id": 1,
     "color_to": "38,50,56,255",
     "color_from": "207,216,220,255",
-    "related_chart_type_id": 2
+    "related_chart_type_id": 1
   },
   "46100027": {
     "default_breaks_algorithm_id": 2,
@@ -165,7 +165,7 @@
     "primary_chart_type_id": 1,
     "color_to": "38,50,56,255",
     "color_from": "207,216,220,255",
-    "related_chart_type_id": 2
+    "related_chart_type_id": 1
   },
   "46100028": {
     "default_breaks_algorithm_id": 2,
@@ -189,7 +189,7 @@
     "primary_chart_type_id": 1,
     "color_to": "136,14,79,255",
     "color_from": "248,187,208,255",
-    "related_chart_type_id": 2
+    "related_chart_type_id": 1
   },
   "46100039": {
     "default_breaks_algorithm_id": 2,
@@ -213,7 +213,7 @@
     "primary_chart_type_id": 1,
     "color_to": "0,170,240,250",
     "color_from": "165,230,255,255",
-    "related_chart_type_id": 2
+    "related_chart_type_id": 1
   },
   "46100047": {
     "default_breaks_algorithm_id": 2,
@@ -237,7 +237,7 @@
     "primary_chart_type_id": 1,
     "color_to": "110,8,0,255",
     "color_from": "255,215,212,255",
-    "related_chart_type_id": 2
+    "related_chart_type_id": 1
   },
   "46100053": {
     "default_breaks_algorithm_id": 2,
@@ -245,7 +245,7 @@
     "primary_chart_type_id": 1,
     "color_to": "38,50,56,255",
     "color_from": "207,216,220,255",
-    "related_chart_type_id": 2
+    "related_chart_type_id": 1
   },
   "46100054": {
     "default_breaks_algorithm_id":2,
@@ -253,7 +253,7 @@
     "primary_chart_type_id":1,
     "color_to": "38,50,56,255",
     "color_from": "207,216,220,255",
-    "related_chart_type_id": 2
+    "related_chart_type_id": 1
     },
   "461000271": {
     "default_breaks_algorithm_id": 2,
@@ -261,7 +261,7 @@
     "primary_chart_type_id": 1,
     "color_to": "49,27,146,255",
     "color_from": "209,196,233,255",
-    "related_chart_type_id": 2
+    "related_chart_type_id": 1
   },
   "461000531": {
     "default_breaks_algorithm_id": 2,
@@ -269,7 +269,7 @@
     "primary_chart_type_id": 1,
     "color_to": "38,50,56,255",
     "color_from": "207,216,220,255",
-    "related_chart_type_id": 2
+    "related_chart_type_id": 1
   },
   "461000541": {
     "default_breaks_algorithm_id": 2,
@@ -277,15 +277,15 @@
     "primary_chart_type_id": 1,
     "color_to": "38,50,56,255",
     "color_from": "207,216,220,255",
-    "related_chart_type_id": 2
+    "related_chart_type_id": 1
   },
   "984010001": {
     "default_breaks_algorithm_id": 2,
     "default_breaks": 5,
-    "primary_chart_type_id": 2,
+    "primary_chart_type_id": 1,
     "color_to": "74,20,140,255",
     "color_from": "225,190,231,255",
-    "related_chart_type_id": 2
+    "related_chart_type_id": 1
   },
   "984010002": {
     "default_breaks_algorithm_id": 2,
@@ -293,7 +293,7 @@
     "primary_chart_type_id": 1,
     "color_to": "74,20,140,255",
     "color_from": "225,190,231,255",
-    "related_chart_type_id": 2
+    "related_chart_type_id": 1
   },
   "984010003": {
     "default_breaks_algorithm_id": 2,
@@ -301,7 +301,7 @@
     "primary_chart_type_id": 1,
     "color_to": "74,20,140,255",
     "color_from": "225,190,231,255",
-    "related_chart_type_id": 2
+    "related_chart_type_id": 1
   },
   "984010004": {
     "default_breaks_algorithm_id": 2,
@@ -309,7 +309,7 @@
     "primary_chart_type_id": 1,
     "color_to": "74,20,140,255",
     "color_from": "225,190,231,255",
-    "related_chart_type_id": 2
+    "related_chart_type_id": 1
   },
   "984010007": {
     "default_breaks_algorithm_id": 2,
@@ -317,7 +317,7 @@
     "primary_chart_type_id": 1,
     "color_to": "74,20,140,255",
     "color_from": "225,190,231,255",
-    "related_chart_type_id": 2
+    "related_chart_type_id": 1
   },
   "984010008": {
     "default_breaks_algorithm_id": 2,
@@ -325,7 +325,7 @@
     "primary_chart_type_id": 1,
     "color_to": "74,20,140,255",
     "color_from": "225,190,231,255",
-    "related_chart_type_id": 2
+    "related_chart_type_id": 1
   },
   "984010011": {
     "default_breaks_algorithm_id": 2,
@@ -333,7 +333,7 @@
     "primary_chart_type_id": 1,
     "color_to": "74,20,140,255",
     "color_from": "225,190,231,255",
-    "related_chart_type_id": 2
+    "related_chart_type_id": 1
   },
   "984010015": {
     "default_breaks_algorithm_id": 2,
@@ -341,7 +341,7 @@
     "primary_chart_type_id": 1,
     "color_to": "74,20,140,255",
     "color_from": "225,190,231,255",
-    "related_chart_type_id": 2
+    "related_chart_type_id": 1
   },
   "984010017": {
     "default_breaks_algorithm_id": 2,
@@ -349,7 +349,7 @@
     "primary_chart_type_id": 1,
     "color_to": "74,20,140,255",
     "color_from": "225,190,231,255",
-    "related_chart_type_id": 2
+    "related_chart_type_id": 1
   },
   "984010018": {
     "default_breaks_algorithm_id": 2,
@@ -357,7 +357,7 @@
     "primary_chart_type_id": 1,
     "color_to": "74,20,140,255",
     "color_from": "225,190,231,255",
-    "related_chart_type_id": 2
+    "related_chart_type_id": 1
   },
   "984010019": {
     "default_breaks_algorithm_id": 2,
@@ -365,7 +365,7 @@
     "primary_chart_type_id": 1,
     "color_to": "74,20,140,255",
     "color_from": "225,190,231,255",
-    "related_chart_type_id": 2
+    "related_chart_type_id": 1
   },
   "984010020": {
     "default_breaks_algorithm_id": 2,
@@ -373,7 +373,7 @@
     "primary_chart_type_id": 1,
     "color_to": "74,20,140,255",
     "color_from": "225,190,231,255",
-    "related_chart_type_id": 2
+    "related_chart_type_id": 1
   },
   "984010021": {
     "default_breaks_algorithm_id": 2,
@@ -381,7 +381,7 @@
     "primary_chart_type_id": 1,
     "color_to": "74,20,140,255",
     "color_from": "225,190,231,255",
-    "related_chart_type_id": 2
+    "related_chart_type_id": 1
   },
   "984010022": {
     "default_breaks_algorithm_id": 2,
@@ -389,7 +389,7 @@
     "primary_chart_type_id": 1,
     "color_to": "74,20,140,255",
     "color_from": "225,190,231,255",
-    "related_chart_type_id": 2
+    "related_chart_type_id": 1
   },
   "984010023": {
     "default_breaks_algorithm_id": 2,
@@ -397,7 +397,7 @@
     "primary_chart_type_id": 1,
     "color_to": "74,20,140,255",
     "color_from": "225,190,231,255",
-    "related_chart_type_id": 2
+    "related_chart_type_id": 1
   },
   "984010024": {
     "default_breaks_algorithm_id": 2,
@@ -405,7 +405,7 @@
     "primary_chart_type_id": 1,
     "color_to": "74,20,140,255",
     "color_from": "225,190,231,255",
-    "related_chart_type_id": 2
+    "related_chart_type_id": 1
   },
   "984010025": {
     "default_breaks_algorithm_id": 2,
@@ -413,7 +413,7 @@
     "primary_chart_type_id": 1,
     "color_to": "74,20,140,255",
     "color_from": "225,190,231,255",
-    "related_chart_type_id": 2
+    "related_chart_type_id": 1
   },
   "984010028": {
     "default_breaks_algorithm_id": 2,
@@ -421,7 +421,7 @@
     "primary_chart_type_id": 1,
     "color_to": "74,20,140,255",
     "color_from": "225,190,231,255",
-    "related_chart_type_id": 2
+    "related_chart_type_id": 1
   },
   "984010030": {
     "default_breaks_algorithm_id": 2,
@@ -429,7 +429,7 @@
     "primary_chart_type_id": 1,
     "color_to": "74,20,140,255",
     "color_from": "225,190,231,255",
-    "related_chart_type_id": 2
+    "related_chart_type_id": 1
   },
   "984010031": {
     "default_breaks_algorithm_id": 2,
@@ -437,7 +437,7 @@
     "primary_chart_type_id": 1,
     "color_to": "74,20,140,255",
     "color_from": "225,190,231,255",
-    "related_chart_type_id": 2
+    "related_chart_type_id": 1
   },
   "984010032": {
     "default_breaks_algorithm_id": 2,
@@ -445,7 +445,7 @@
     "primary_chart_type_id": 1,
     "color_to": "74,20,140,255",
     "color_from": "225,190,231,255",
-    "related_chart_type_id": 2
+    "related_chart_type_id": 1
   },
   "984010033": {
     "default_breaks_algorithm_id": 2,
@@ -453,7 +453,7 @@
     "primary_chart_type_id": 1,
     "color_to": "74,20,140,255",
     "color_from": "225,190,231,255",
-    "related_chart_type_id": 2
+    "related_chart_type_id": 1
   },
   "984010034": {
     "default_breaks_algorithm_id": 2,
@@ -461,7 +461,7 @@
     "primary_chart_type_id": 1,
     "color_to": "74,20,140,255",
     "color_from": "225,190,231,255",
-    "related_chart_type_id": 2
+    "related_chart_type_id": 1
   },
   "984010035": {
     "default_breaks_algorithm_id": 2,
@@ -469,7 +469,7 @@
     "primary_chart_type_id": 1,
     "color_to": "74,20,140,255",
     "color_from": "225,190,231,255",
-    "related_chart_type_id": 2
+    "related_chart_type_id": 1
   },
   "984010036": {
     "default_breaks_algorithm_id": 2,
@@ -477,7 +477,7 @@
     "primary_chart_type_id": 1,
     "color_to": "74,20,140,255",
     "color_from": "225,190,231,255",
-    "related_chart_type_id": 2
+    "related_chart_type_id": 1
   },
   "984010037": {
     "default_breaks_algorithm_id": 2,
@@ -485,7 +485,7 @@
     "primary_chart_type_id": 1,
     "color_to": "74,20,140,255",
     "color_from": "225,190,231,255",
-    "related_chart_type_id": 2
+    "related_chart_type_id": 1
   },
   "989800001": {
     "default_breaks_algorithm_id": 2,
@@ -493,7 +493,7 @@
     "primary_chart_type_id": 1,
     "color_to": "136,14,79,255",
     "color_from": "255,205,210,255",
-    "related_chart_type_id": 2
+    "related_chart_type_id": 1
   },
   "default": {
     "default_breaks_algorithm_id": 2,
