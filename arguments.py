@@ -43,7 +43,7 @@ class argParser(object):
                 ret_msg = "Product ID search cannot be combined with start/end dates."
             elif (self.args.start and not self.args.end) or (not self.args.start and self.args.end):
                 ret_msg = "Start and end date must both be present to look up products within a date range."
-            elif len(self.args.prodid) > 1:
+            elif self.args.prodid is not None and len(self.args.prodid) > 1:
                 ret_msg = "Multiple Product IDs can only be used if creating a new merged product with the -i flag."
             elif not self.args.start and not self.args.end and not self.args.prodid:
                 ret_msg = "No arguments were received."

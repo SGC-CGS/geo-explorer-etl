@@ -62,6 +62,18 @@ def fix_ref_year(year_str):
     return retval
 
 
+def get_nth_item_from_string_list(item_list, delim, n=None):
+    # Convert string to list with delimiter and return the nth member of the list. If none given, return last item.
+    # Example: "Property with multiple residential units _ Vacant land _ Number of owners" --> "Number of owners"
+    split_ind = item_list.split(delim)  # separator between dimensions/members
+    n = -1 if n is None else n
+    try:
+        retval = split_ind[n]
+    except IndexError:
+        retval = ""
+    return retval
+
+
 def get_product_defaults(pid, pd_path):
     # read json file and return any defaults to be set on product (pid) for indicator metadata
     # examples: default breaks, colours
