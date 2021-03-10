@@ -92,11 +92,8 @@ if __name__ == "__main__":
         if wds.get_full_table_download(pid, "en", pid_folder + ".zip") and h.valid_zip_file(pid_folder + ".zip"):
             logger.info("Updating Product ID: " + pid_str + "\n")
 
-            # Get any existing product metadata related to charts from the db
-            # This is so we can preserve any manual chart configuration that already exists when appending data.
+            # keep any existing product chart info to preserve some of the manual chart configuration where possible
             existing_ind_chart_meta_data = db.get_indicator_chart_info(pid_str)
-            # extract the indicator ids from the related charts - TODO
-            # existing_ind_chart_meta_data = dfh.add_related_chart_indicator_ids(existing_ind_chart_meta_data)
 
             # delete product in database
             if db.delete_product(pid):

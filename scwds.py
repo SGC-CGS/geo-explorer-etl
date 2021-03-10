@@ -193,7 +193,7 @@ class serviceWds(object):
         if self.last_http_req_status:
             resp = r.json()
             if resp[0]["status"] != "SUCCESS":
-                log.warning("Cube metadata could not be retrieved. WDS returned: " + str(resp["status"]) +
+                log.error("Cube metadata could not be retrieved. WDS returned: " + str(resp[0]["status"]) +
                             " for product " + str(product_id))
             else:
                 retval = resp[0]["object"]

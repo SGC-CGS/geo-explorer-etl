@@ -243,7 +243,7 @@ def build_indicator_df(product_id, release_dt, dim_members, uom_codeset, ref_dat
     pre_df = False
     # because the dicts are already sorted we can safely stick them together as columns in a dataframe at the end.
     if len(mem_names_en) == len(mem_names_fr) == len(mem_ids) == len(mem_uoms):
-        pre_df = pd.DataFrame({"IndicatorName_EN": mem_names_en, "IndicatorName_FR": mem_names_fr,
+        pre_df = pd.DataFrame({"IndicatorNameLong_EN": mem_names_en, "IndicatorNameLong_FR": mem_names_fr,
                                "Coordinate": mem_ids, "UOM_ID": mem_uoms}, dtype=str)
 
     # UOM - Combining members may result in the uom field looking like "nan nan 229.0", we only want the 229 part.
@@ -257,8 +257,11 @@ def build_indicator_df(product_id, release_dt, dim_members, uom_codeset, ref_dat
     pre_df["IndicatorThemeID"] = product_id
     pre_df["ReleaseIndicatorDate"] = release_dt
     pre_df["Vector"] = np.NaN  # Vector field exists in gis.Indicator but is not used. We will insert nulls.
-    pre_df["IndicatorNameLong_EN"] = pre_df["IndicatorName_EN"]  # just a copy of a field required for db
-    pre_df["IndicatorNameLong_FR"] = pre_df["IndicatorName_FR"]
+    # IndicatorNames seem to only be used for populating titles on related charts - 2nd last member for legend
+    pre_df["IndicatorName_EN"] = pre_df.apply(lambda x: h.get_nth_item_from_string_list(x["IndicatorNameLong_EN"],
+                                                                                        " _ ", -2), axis=1)
+    pre_df["IndicatorName_FR"] = pre_df.apply(lambda x: h.get_nth_item_from_string_list(x["IndicatorNameLong_FR"],
+                                                                                        " _ ", -2), axis=1)
 
     # Create new indicator data frame with a row for each year in the reference period
     rd_years = h.get_years_range(ref_date_list)
@@ -266,17 +269,17 @@ def build_indicator_df(product_id, release_dt, dim_members, uom_codeset, ref_dat
 
     # add the remaining fields that required RefYear to be built first
     ind_df["RefYear"] = ind_df["RefYear"].astype("string")
-    ind_df["ReferencePeriod"] = ind_df["RefYear"] + "-01-01"  # becomes Jan 1
+    ind_df["ReferencePeriod"] = ind_df["RefYear"] + "-01-01"  # becomes Jan 1 TODO
     ind_df["IndicatorCode"] = str(product_id) + "." + ind_df["Coordinate"] + "." + ind_df["ReferencePeriod"]
-    ind_df["IndicatorDisplay_EN"] = build_dimension_ul(ind_df["RefYear"], ind_df["IndicatorName_EN"])
-    ind_df["IndicatorDisplay_FR"] = build_dimension_ul(ind_df["RefYear"], ind_df["IndicatorName_FR"])
+    ind_df["IndicatorDisplay_EN"] = build_dimension_ul(ind_df["RefYear"], ind_df["IndicatorNameLong_EN"])
+    ind_df["IndicatorDisplay_FR"] = build_dimension_ul(ind_df["RefYear"], ind_df["IndicatorNameLong_FR"])
     ind_df["IndicatorId"] = h.create_id_series(ind_df, next_id)  # populate IDs
     # build fields needed later for IndicatorMetaData DimensionUniqueKey matching and RelatedCharts
-    ind_df["IndicatorFmt"] = ind_df["RefYear"] + "-" + ind_df["IndicatorName_EN"].str.replace(" _ ", "-")
-    ind_df["LastIndicatorMember_EN"] = ind_df.apply(lambda x: get_last_member_from_indicator_name(
-        x["IndicatorName_EN"]), axis=1)
-    ind_df["LastIndicatorMember_FR"] = ind_df.apply(lambda x: get_last_member_from_indicator_name(
-        x["IndicatorName_FR"]), axis=1)
+    ind_df["IndicatorFmt"] = ind_df["RefYear"] + "-" + ind_df["IndicatorNameLong_EN"].str.replace(" _ ", "-")
+    ind_df["LastIndicatorMember_EN"] = ind_df.apply(lambda x: h.get_nth_item_from_string_list(x["IndicatorNameLong_EN"],
+                                                                                              " _ "), axis=1)
+    ind_df["LastIndicatorMember_FR"] = ind_df.apply(lambda x: h.get_nth_item_from_string_list(x["IndicatorNameLong_FR"],
+                                                                                              " _ "), axis=1)
 
     # set datatypes for db
     ind_df["ReleaseIndicatorDate"] = ind_df["ReleaseIndicatorDate"].astype("datetime64[ns]")
@@ -447,10 +450,10 @@ def build_reference_dates(start_str, end_str, freq_code):
         15: "4AS",  # every 4 years, interpreted as every 4 years at start of year
         16: "5AS",  # every 5 years, interpreted as every 5 years at start of year
         17: "10AS",  # every 10 years, interpreted as every 10 years at start of year
-        18: "AS",  # occasional annual as start of year
-        19: "QS",  # occasional quarterly as start of quarter
-        20: "MS",  # occasional monthly as start of month
-        21: "D"  # occasional daily as daily
+        18: "AS",  # occasional (assumed as annual as start of year)
+        19: "QS",  # occasional quarterly (assumed as start of quarter)
+        20: "MS",  # occasional monthly (assumed as start of month)
+        21: "D"  # occasional daily (assumed as daily)
     }
     fr = freq_dict[freq_code] if freq_code in freq_dict else "AS"  # default to first of each year if not in dict
     retval = pd.date_range(start_dt, end_dt, freq=fr)
@@ -462,7 +465,7 @@ def build_related_charts_df(idf, prod_defaults, existing_md_df):
     # already exists (existing_meta_data) use it, otherwise use the product default (prod_defaults).
 
     ind_subset_df = idf.loc[:, ["IndicatorId", "IndicatorCode", "UOM_ID", "LastIndicatorMember_EN",
-                                "LastIndicatorMember_FR", "UOM_EN", "UOM_FR"]]  # subset to needed fields
+                                "LastIndicatorMember_FR", "UOM_EN", "UOM_FR"]]
     sub_existing_md_df = existing_md_df.loc[:, ["IndicatorCode", "ChartTypeId", "ChartTitle_EN", "ChartTitle_FR",
                                                 "FieldAlias_EN", "FieldAlias_FR"]]  # subset to needed fields
     df_rc = pd.merge(ind_subset_df, sub_existing_md_df, on="IndicatorCode", how="left")  # merge with existing metadata
@@ -472,22 +475,20 @@ def build_related_charts_df(idf, prod_defaults, existing_md_df):
     df_rc["IndicatorMetaDataId"] = df_rc["IndicatorId"]  # duplicate column
     df_rc.rename(columns={"UOM_ID": "DataFormatId"}, inplace=True)
 
-    # set defaults for product if no existing metadata exists (value will be None if it does not exist)
-    df_rc["ChartTypeId"].fillna(prod_defaults["related_chart_type_id"], inplace=True)
-    df_rc["ChartTitle_EN"].fillna(df_rc["LastIndicatorMember_EN"], inplace=True)
-    df_rc["ChartTitle_FR"].fillna(df_rc["LastIndicatorMember_FR"], inplace=True)
-    df_rc["FieldAlias_EN"].fillna(df_rc["UOM_EN"], inplace=True)
-    df_rc["FieldAlias_FR"].fillna(df_rc["UOM_FR"], inplace=True)
+    df_rc["ChartTypeId"].fillna(prod_defaults["related_chart_type_id"], inplace=True)  # default if none existed
+    df_rc["ChartTitle_EN"] = df_rc["LastIndicatorMember_EN"]
+    df_rc["ChartTitle_FR"] = df_rc["LastIndicatorMember_FR"]
+    df_rc["FieldAlias_EN"] = df_rc["UOM_EN"]
+    df_rc["FieldAlias_FR"] = df_rc["UOM_FR"]
 
     # uom formats are inserted into the query field
     df_rc["en_format"] = df_rc.apply(lambda x: set_uom_format(x["DataFormatId"], "en", x["ChartTypeId"]), axis=1)
     df_rc["fr_format"] = df_rc.apply(lambda x: set_uom_format(x["DataFormatId"], "fr", x["ChartTypeId"]), axis=1)
 
-    # find default related indicators by building a generic indicator code and then finding all matching ids
-    # these indicator ids will get added to the query that gets saved in the db.
+    # build a generic indicator code for each of the indicators. Can group by these later.
     df_rc["GenericIndicatorCode"] = df_rc.apply(lambda x: set_generic_indicator_code(x["IndicatorCode"]), axis=1)
-    df_rc["RelatedIndicatorIDs"] = df_rc.apply(lambda x: get_related_indicator_list(x["GenericIndicatorCode"],
-                                                                                    x["IndicatorId"], df_rc), axis=1)
+    df_rc["RelatedIndicatorIDs"] = df_rc.apply(lambda x: get_related_indicator_list(x["GenericIndicatorCode"], df_rc),
+                                               axis=1)
 
     df_rc["Query"] = "SELECT iv.value AS Value, CASE WHEN iv.value IS NULL THEN nr.symbol ELSE " + df_rc["en_format"] \
                      + " END AS FormattedValue_EN, CASE WHEN iv.value IS NULL THEN nr.symbol ELSE " + \
@@ -555,15 +556,6 @@ def create_dimension_member_df(dim_members):
     return dm_df
 
 
-def get_last_member_from_indicator_name(indicator_name):
-    # for the given indicator name, pop off and return the last member
-    # Example: "Property with multiple residential units _ Vacant land _ Number of owners"
-    # Becomes: "Number of owners"
-    split_ind = indicator_name.split(" _ ")  # separator between dimensions/members
-    retval = split_ind[-1]
-    return retval
-
-
 def fix_dguid(vintage, orig_dguid, is_crime_table):
     # verify that the dguid is valid. If it isn't, try to build a new one. For now this only applies to tables
     # flagged as a crime table. Format: VVVVTSSSSGGGGGGGGGGGG (V-vintage(4), T-type(1), S-schema(4), G-GUID(1-12)
@@ -577,11 +569,11 @@ def fix_dguid(vintage, orig_dguid, is_crime_table):
     return new_dguid
 
 
-def get_related_indicator_list(generic_ind_code, ind_id, idf):
+def get_related_indicator_list(generic_ind_code, idf):
     # For the specified indicator dataframe (idf), find rows with an IndicatorCode that matches generic_ind_code.
-    # Build a list of the matching IndicatorIDs (exclude the current id), and return the list as a comma
+    # Build a list of the matching IndicatorIDs, and return the list as a comma
     # separated string. This is used to find related indicator ids for gis.RelatedCharts.
-    filtered_ind_df = idf.loc[(idf["GenericIndicatorCode"] == generic_ind_code) & (idf["IndicatorId"] != ind_id)]
+    filtered_ind_df = idf.loc[(idf["GenericIndicatorCode"] == generic_ind_code)]
     filtered_ind_df["IndicatorId"] = filtered_ind_df["IndicatorId"].astype("string")
     indicator_id_list = filtered_ind_df["IndicatorId"].tolist()
     indicator_id_str = ','.join(indicator_id_list)
