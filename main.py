@@ -14,9 +14,6 @@ WORK_DIR = str(pathlib.Path(__file__).parent.absolute())  # current script path
 default_chart_json = WORK_DIR + "\\product_defaults.json"  # default chart info for specific products
 products_to_merge_json = WORK_DIR + "\\products_to_merge.json"  # products to be merged to a single IndicatorThemeID
 
-# list of crime tables for special handling -- this should be cleaned up later
-crime_tables = [35100177, 35100178, 35100179, 35100180, 35100181, 35100182, 35100183, 35100184, 35100185]
-
 logger = h.setup_logger(WORK_DIR, "etl_log")  # set up logging to file and console
 
 arg = arguments.argParser()  # get CLI arguments
@@ -48,7 +45,7 @@ if __name__ == "__main__":
         if len(prod_id) > 1:  # if it is a table to be merged, update the json file for merged tables
             h.update_merge_products_json(ind_theme_id, prod_id, products_to_merge_json)
 
-        pid_meta = scwds.build_metadata_dict(wds.get_cube_metadata(ind_theme_id))  # product metadata
+        pid_meta = scwds.build_metadata_dict(wds.get_cube_metadata(ind_theme_id), ind_theme_id)  # product metadata
         ex_subj = db.get_matching_product_list([pid_meta["subject_code"]])  # existing 2-5 digit subject code
         ex_subj_short = db.get_matching_product_list([pid_meta["subject_code_short"]])  # existing 2 digit subject code
 
@@ -86,7 +83,6 @@ if __name__ == "__main__":
         pid_str = str(pid)  # for moments when str is required
         pid_folder = WORK_DIR + "\\" + pid_str + "-en"
         pid_csv_path = pid_folder + "\\" + pid_str + ".csv"
-        crime_table = True if int(pid) in crime_tables else False  # crime stats tables have some special handling
 
         # Download the product tables
         if wds.get_full_table_download(pid, "en", pid_folder + ".zip") and h.valid_zip_file(pid_folder + ".zip"):
@@ -98,7 +94,7 @@ if __name__ == "__main__":
             # delete product in database
             if db.delete_product(pid):
 
-                pid_meta = scwds.build_metadata_dict(wds.get_cube_metadata(pid))  # product metadata
+                pid_meta = scwds.build_metadata_dict(wds.get_cube_metadata(pid), pid_str)  # product metadata
                 df_geo_ref = db.get_geo_reference_ids()  # DGUIDs from gis.GeographyReference
                 df_ind_null = db.get_indicator_null_reason()  # codes from gis.IndicatorNullReason
 
@@ -129,7 +125,8 @@ if __name__ == "__main__":
                     for csv_chunk in pd.read_csv(zf.open(pid_str + ".csv"), chunksize=20000, sep=",",
                                                  usecols=list(col_dict.keys()), dtype=col_dict):  # NO compression flag
                         # build formatted cols
-                        chunk_data = dfh.setup_chunk_columns(csv_chunk, pid_str, pid_meta["release_date"], crime_table)
+                        chunk_data = dfh.setup_chunk_columns(csv_chunk, pid_str, pid_meta["release_date"],
+                                                             pid_meta["freq"])
 
                         # keep unique reference dates for gis.DimensionValues
                         ref_date_chunk = chunk_data.loc[:, ["REF_DATE"]]

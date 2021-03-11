@@ -12,6 +12,31 @@ log = logging.getLogger("etl_log")
 log.addHandler(logging.NullHandler())
 
 
+def build_freq_code_to_pd_dict():
+    # build a dictionary of pandas date formats based on WDS codes that indicate how often the data is published).
+    freq_dict = {
+        1: "D",  # daily
+        2: "W",  # weekly (sun)
+        4: "2W",  # every 2 weeks (sun)
+        6: "MS",  # monthly as start of month
+        7: "2MS",  # every 2 months, interpreted as every 2 months at start of month
+        9: "QS",  # quarterly as start of quarter
+        10: "4MS",  # 3 times per year, interpreted as every 4 months at start of month
+        11: "6MS",  # semi-annual, interpreted as every 6 months at start of month
+        12: "AS",  # annual as start of year
+        13: "2AS",  # every 2 years, interpreted as every 2 years at start of year
+        14: "3AS",  # every 3 years, interpreted as every 3 years at start of year
+        15: "4AS",  # every 4 years, interpreted as every 4 years at start of year
+        16: "5AS",  # every 5 years, interpreted as every 5 years at start of year
+        17: "10AS",  # every 10 years, interpreted as every 10 years at start of year
+        18: "AS",  # occasional (assumed as annual as start of year)
+        19: "QS",  # occasional quarterly (assumed as start of quarter)
+        20: "MS",  # occasional monthly (assumed as start of month)
+        21: "D"  # occasional daily (assumed as daily)
+    }
+    return freq_dict
+
+
 def convert_ref_year_to_date(ref_per):
     # if only year is given, set to Jan 1 for db
 
@@ -42,6 +67,11 @@ def delete_var_and_release_mem(var_names):
     for var_name in var_names:
         del var_name
     gc.collect()
+
+
+def fix_ref_date(ref_date, freq):
+    # try to determine a valid reference date based on given date (ref_date) and frequency (freq)
+    return ref_date
 
 
 def fix_ref_year(year_str):
