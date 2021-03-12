@@ -1,4 +1,4 @@
-# Download updated product data from WDS and update database - TODO REMOVE -> test commit for new repo (2nd time)
+# Download updated product data from WDS and update database - TODO REMOVE -> test commit for new repo (3rd time)
 import arguments  # for parsing CLI arguments
 import config as cfg  # configuration
 from datetime import datetime
