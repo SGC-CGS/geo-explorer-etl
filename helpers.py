@@ -1,7 +1,6 @@
 # helper functions
 import datetime as dt
 import gc  # for garbage collection
-import json
 import logging
 from logging.handlers import RotatingFileHandler
 import pandas as pd
@@ -37,6 +36,15 @@ def build_freq_code_to_pd_dict():
     return freq_dict
 
 
+def combine_ordered_lists(list1, list2):
+    # append unique values from list2 to end of list1. ensures list1 stays in original order.
+    retval = list1
+    for val in list2:
+        if val not in list1:
+            retval.append(val)
+    return retval
+
+
 def convert_ref_year_to_date(ref_per):
     # if only year is given, set to Jan 1 for db
 
@@ -69,11 +77,6 @@ def delete_var_and_release_mem(var_names):
     gc.collect()
 
 
-def fix_ref_date(ref_date, freq):
-    # try to determine a valid reference date based on given date (ref_date) and frequency (freq)
-    return ref_date
-
-
 def fix_ref_year(year_str):
     # handle abnormal year formats in reference periods
     year_str = str(year_str)
@@ -102,17 +105,6 @@ def get_nth_item_from_string_list(item_list, delim, n=None):
     except IndexError:
         retval = ""
     return retval
-
-
-def get_product_defaults(pid, pd_path):
-    # read json file and return any defaults to be set on product (pid) for indicator metadata
-    # examples: default breaks, colours
-    prod_dict = load_json_file(pd_path)
-    if pid in prod_dict:
-        prod_defaults = prod_dict[pid]
-    else:
-        prod_defaults = prod_dict["default"]
-    return prod_defaults
 
 
 def get_subject_desc_from_code_set(subject_code, subject_codeset, lang):
@@ -156,16 +148,6 @@ def get_uom_desc_from_code_set(uom_code, uom_codeset, lang):
     return retval
 
 
-def load_json_file(pd_path):
-    # read json file and return dictionary
-    try:
-        with open(pd_path) as json_file:
-            json_data = json.load(json_file)
-    except IOError:
-        json_data = {}
-    return json_data
-
-
 def setup_logger(work_dir, log_name):
     logger = logging.getLogger(log_name)
     logging.getLogger("etl_log")
@@ -177,29 +159,10 @@ def setup_logger(work_dir, log_name):
     return logger
 
 
-def update_merge_products_json(indicator_theme_id, merge_prod_ids, mp_path):
-    # open the merge products json file (json_file) and update the dictionary of merged product ids (merge_prod_ids)
-    merge_dict = load_json_file(mp_path)
-    merge_dict[str(indicator_theme_id)] = {"linked_tables": [str(i) for i in merge_prod_ids]}  # all to strings for json
-    retval = write_json_file(merge_dict, mp_path)
-    return retval
-
-
 def valid_zip_file(source_file):
     log.info("Checking " + source_file)
     retval = True
     if not zf.is_zipfile(source_file):
         log.warning("\nERROR: Not a valid zip file: " + source_file)
-        retval = False
-    return retval
-
-
-def write_json_file(jdict, pd_path):
-    # write dictionary (jdict) to json file
-    retval = True
-    try:
-        with open(pd_path, "w") as json_file:
-            json.dump(jdict, json_file, indent=4)  # formatted json file
-    except IOError:
         retval = False
     return retval

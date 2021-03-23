@@ -4,5 +4,6 @@
 *.log
 *.xml
 *.iml
+*.txt
 /config.py
 /.idea

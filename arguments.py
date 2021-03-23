@@ -9,27 +9,49 @@ log = logging.getLogger("etl_log")
 log.addHandler(logging.NullHandler())
 
 
+def show_merge_warning(sib_prod_id, master_prod_id, json_file_name):
+    # create warning message for incorrect operations on merged tables
+    sib_prod_id = str(sib_prod_id)
+    master_prod_id = str(master_prod_id)
+    if sib_prod_id != "":
+        msg = "Product " + sib_prod_id + " is a sibling table in a merged product (Master: " + master_prod_id + \
+              ") and cannot be inserted alone nor can it be updated automatically in a date range. See " + \
+              json_file_name + " for details.\n"
+    else:
+        msg = "Product " + master_prod_id + " is the master table in a merged product and cannot be inserted alone " \
+              "nor can it be updated automatically in a date range. See " + json_file_name + " for details.\n"
+    return msg
+
+
 class argParser(object):
     def __init__(self):
         self.parser = argparse.ArgumentParser()
         self.parser.add_argument("-i", dest="insert_new_table", action="store_true", help="Insert Product ID as a new "
                                     "product. If flag is absent, existing product data will be updated.")
         self.parser.add_argument("--start", type=date.fromisoformat, metavar="YYYY-MM-DD",
-                                 help="Start release date when looking for product updates.")
+                                 help="Start release date when looking for product updates from get_changed_cube_list.")
         self.parser.add_argument("--end", type=date.fromisoformat,  metavar="YYYY-MM-DD",
-                                 help="End release date when looking for product updates.")
+                                 help="End release date when looking for product updates from get_changed_cube_list.")
         self.parser.add_argument("--prodid", type=int, nargs='*',  metavar="PRODID_1 PRODID_2",
-                                 help="Product ID to create or update (no special characters). If inserting a new "
+                                 help="Product ID to insert or update (no special characters). If inserting a new "
                                       "product, several Product IDs can be specified (separated by spaces) to merge "
                                       "into a single product. If products are merged, the first Product ID entered "
                                       "will become the new Indicator Theme ID for all merged data. All merged products "
                                       "must have the same dimension/member structure.")
+        self.parser.add_argument("--minrefyear", type=int, metavar="YYYY",
+                                 help="Earliest reference date to process from data file. Example: --minrefyear 2017 "
+                                      "will only add data with a reference date >= 2017-01-01.")
+
         self.args = self.parser.parse_args()
 
     def check_valid_parse_args(self):
         # check the parsed arguments to see if they are valid. Returns status message if issues, otherwise "".
         # Note data type validation is done when the argument is created.
         ret_msg = ""
+        if self.args.minrefyear:
+            if len(str(self.args.minrefyear)) != 4:
+                ret_msg = "Minimum reference year must be a 4 digit number."
+
         if self.args.insert_new_table:
             # arguments for inserting a new product
             if not self.args.prodid:
@@ -46,7 +68,8 @@ class argParser(object):
             elif self.args.prodid is not None and len(self.args.prodid) > 1:
                 ret_msg = "Multiple Product IDs can only be used if creating a new merged product with the -i flag."
             elif not self.args.start and not self.args.end and not self.args.prodid:
-                ret_msg = "No arguments were received."
+                ret_msg = "Not enough arguments were received. At a minimum, --prodid OR --start and --end must be " \
+                          "included."
         return ret_msg
 
     def get_arg_value(self, arg_name):
