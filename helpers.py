@@ -1,7 +1,6 @@
 # helper functions
 import datetime as dt
 import gc  # for garbage collection
-import json
 import logging
 from logging.handlers import RotatingFileHandler
 import pandas as pd
@@ -10,6 +9,40 @@ import zipfile as zf
 # set up logger if available
 log = logging.getLogger("etl_log")
 log.addHandler(logging.NullHandler())
+
+
+def build_freq_code_to_pd_dict():
+    # build a dictionary of pandas date formats based on WDS codes that indicate how often the data is published).
+    freq_dict = {
+        1: "D",  # daily
+        2: "W",  # weekly (sun)
+        4: "2W",  # every 2 weeks (sun)
+        6: "MS",  # monthly as start of month
+        7: "2MS",  # every 2 months, interpreted as every 2 months at start of month
+        9: "QS",  # quarterly as start of quarter
+        10: "4MS",  # 3 times per year, interpreted as every 4 months at start of month
+        11: "6MS",  # semi-annual, interpreted as every 6 months at start of month
+        12: "AS",  # annual as start of year
+        13: "2AS",  # every 2 years, interpreted as every 2 years at start of year
+        14: "3AS",  # every 3 years, interpreted as every 3 years at start of year
+        15: "4AS",  # every 4 years, interpreted as every 4 years at start of year
+        16: "5AS",  # every 5 years, interpreted as every 5 years at start of year
+        17: "10AS",  # every 10 years, interpreted as every 10 years at start of year
+        18: "AS",  # occasional (assumed as annual as start of year)
+        19: "QS",  # occasional quarterly (assumed as start of quarter)
+        20: "MS",  # occasional monthly (assumed as start of month)
+        21: "D"  # occasional daily (assumed as daily)
+    }
+    return freq_dict
+
+
+def combine_ordered_lists(list1, list2):
+    # append unique values from list2 to end of list1. ensures list1 stays in original order.
+    retval = list1
+    for val in list2:
+        if val not in list1:
+            retval.append(val)
+    return retval
 
 
 def convert_ref_year_to_date(ref_per):
@@ -74,17 +107,6 @@ def get_nth_item_from_string_list(item_list, delim, n=None):
     return retval
 
 
-def get_product_defaults(pid, pd_path):
-    # read json file and return any defaults to be set on product (pid) for indicator metadata
-    # examples: default breaks, colours
-    prod_dict = load_json_file(pd_path)
-    if pid in prod_dict:
-        prod_defaults = prod_dict[pid]
-    else:
-        prod_defaults = prod_dict["default"]
-    return prod_defaults
-
-
 def get_subject_desc_from_code_set(subject_code, subject_codeset, lang):
     # retrieve unit of measure description for the specified subject_code and language (lang)
     retval = ""
@@ -126,16 +148,6 @@ def get_uom_desc_from_code_set(uom_code, uom_codeset, lang):
     return retval
 
 
-def load_json_file(pd_path):
-    # read json file and return dictionary
-    try:
-        with open(pd_path) as json_file:
-            json_data = json.load(json_file)
-    except IOError:
-        json_data = {}
-    return json_data
-
-
 def setup_logger(work_dir, log_name):
     logger = logging.getLogger(log_name)
     logging.getLogger("etl_log")
@@ -147,29 +159,10 @@ def setup_logger(work_dir, log_name):
     return logger
 
 
-def update_merge_products_json(indicator_theme_id, merge_prod_ids, mp_path):
-    # open the merge products json file (json_file) and update the dictionary of merged product ids (merge_prod_ids)
-    merge_dict = load_json_file(mp_path)
-    merge_dict[str(indicator_theme_id)] = {"linked_tables": [str(i) for i in merge_prod_ids]}  # all to strings for json
-    retval = write_json_file(merge_dict, mp_path)
-    return retval
-
-
 def valid_zip_file(source_file):
     log.info("Checking " + source_file)
     retval = True
     if not zf.is_zipfile(source_file):
         log.warning("\nERROR: Not a valid zip file: " + source_file)
-        retval = False
-    return retval
-
-
-def write_json_file(jdict, pd_path):
-    # write dictionary (jdict) to json file
-    retval = True
-    try:
-        with open(pd_path, "w") as json_file:
-            json.dump(jdict, json_file, indent=4)  # formatted json file
-    except IOError:
         retval = False
     return retval

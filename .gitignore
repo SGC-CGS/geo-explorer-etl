@@ -1,0 +1,9 @@
+*.csv
+*.sql
+*.zip
+*.log
+*.xml
+*.iml
+*.txt
+/config.py
+/.idea

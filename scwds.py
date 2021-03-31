@@ -8,7 +8,7 @@ log = logging.getLogger("etl_log")
 log.addHandler(logging.NullHandler())
 
 
-def build_metadata_dict(prod_metadata):
+def build_metadata_dict(prod_metadata, prod_id):
     # build dictionary of metadata from get_cube_metadata results (prod_metadata), add default values where needed
 
     # set up default dates
@@ -18,18 +18,17 @@ def build_metadata_dict(prod_metadata):
     # Get the product metadata
     metadata_dict = {
         "dimension_names": get_metadata_dimension_names(prod_metadata, True),
-        "release_date": get_metadata_field(prod_metadata, "releaseTime", cur_date_iso),
-        "start_date": get_metadata_field(prod_metadata, "cubeStartDate", cur_date_fmt),
-        "end_date": get_metadata_field(prod_metadata, "cubeEndDate", cur_date_fmt),
-        "freq": get_metadata_field(prod_metadata, "frequencyCode", 12),  # default annual
-        "dimensions_and_members": get_metadata_field(prod_metadata, "dimension", [{}]),
-        "title_en": get_metadata_field(prod_metadata, "cubeTitleEn", ""),
-        "title_fr": get_metadata_field(prod_metadata, "cubeTitleFr", ""),
-        "survey_code": get_metadata_field(prod_metadata, "surveyCode", None),
-        "subject_code": get_metadata_field(prod_metadata, "subjectCode", None),
-        "subject_code_short": ""
+        "release_date": get_metadata_field(prod_metadata, "releaseTime", cur_date_iso, prod_id),
+        "start_date": get_metadata_field(prod_metadata, "cubeStartDate", cur_date_fmt, prod_id),
+        "end_date": get_metadata_field(prod_metadata, "cubeEndDate", cur_date_fmt, prod_id),
+        "freq": get_metadata_field(prod_metadata, "frequencyCode", 12, prod_id),  # default annual
+        "dimensions_and_members": get_metadata_field(prod_metadata, "dimension", [{}], prod_id),
+        "title_en": get_metadata_field(prod_metadata, "cubeTitleEn", "", prod_id),
+        "title_fr": get_metadata_field(prod_metadata, "cubeTitleFr", "", prod_id),
+        "survey_code": get_metadata_field(prod_metadata, "surveyCode", None, prod_id),
+        "subject_code": get_metadata_field(prod_metadata, "subjectCode", None, prod_id),
+        "subject_code_short": str(prod_id)[:2]  # first 2 digits of prod id forms the ultimate parent subject code
     }
-    metadata_dict["subject_code_short"] = metadata_dict["subject_code"][:2]  # initial subject code can be > 2 chars
     return metadata_dict
 
 
@@ -49,13 +48,16 @@ def get_metadata_dimension_names(metadata, ignore_geo):
     return dim
 
 
-def get_metadata_field(metadata, field_name, default_value):
+def get_metadata_field(metadata, field_name, default_value, prod_id):
     # return requested field (field_name) from get cube metadata results (metadata)
     # if not available, return default (default_value)
     retval = default_value
     if field_name in metadata:
         if isinstance(metadata[field_name], list) and field_name in ["surveyCode", "subjectCode"]:
             retval = metadata[field_name][0]  # return first value for specified list fields
+            if field_name == "subjectCode" and len(metadata[field_name]) > 1:  # if many, use most related subject code
+                for sub_code in metadata[field_name]:
+                    retval = sub_code if str(sub_code)[:2] == str(prod_id)[:2] else retval
         else:
             retval = metadata[field_name]
     else:

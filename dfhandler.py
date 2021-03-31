@@ -12,16 +12,6 @@ log = logging.getLogger("etl_log")
 log.addHandler(logging.NullHandler())
 
 
-def add_related_chart_indicator_ids(rcdf):  # TODO -- this function is incomplete
-    # for a dataframe with related chart data (rcdf), extract the indicator ids from the "Query" column.
-    # These indicator ids will be added as a list in a new column and a new df is returned.
-    new_rc_df = rcdf
-    # example code: (from another proc, need to update this.)
-    # "02. Resident owners only" -->removes "02. "
-    # new_rc_df["newcol"] = re.sub(r"^([^.]+\.)", "", row["Display_EN"]).lstrip()
-    return new_rc_df
-
-
 def build_column_and_type_dict(dimensions):
     # set up the dicionary of columns and data types for pandas df, then add columns listed in dimensions as str types
     # Note: All strings as object type by default. Categories are more efficient for string fields if there are < 50%
@@ -150,9 +140,10 @@ def build_dimension_values_df_subset(dvdf):
     return df
 
 
-def build_geographic_level_for_indicator_df(gldf, idf):
+def build_geographic_level_for_indicator_df(gldf, idf, existing_gli_df, is_sibling):
     # build the data frame for GeographicLevelForIndicator based on dataframe geographic levels abnd indicator codes
-    # (gldf) and df of Indicator codes and Ids that were just inserted to the db (idf).
+    # (gldf) and df of Indicator codes and Ids that were just inserted to the db (idf). Exclude any rows that
+    # already exist in existing_gli_df (this can happen with merged tables).
     df_gli = gldf
     pattern = "|".join(["S0504", "S0505", "S0506"])  # S0504(CA),S0505(CMAP),S0506(CAP)->S0503(CMA) (from orig PowerBI)
     df_gli["GeographicLevelId"] = df_gli["GeographicLevelId"].str.replace(pattern, "S0503")
@@ -163,11 +154,18 @@ def build_geographic_level_for_indicator_df(gldf, idf):
     df_gli.dropna(inplace=True)  # remove any row w/ na
     df_gli = df_gli.loc[(df_gli.GeographicLevelId != "")]  # remove any row w/ empty geolevel
 
+    if existing_gli_df.shape[0] > 0:  # remove anything from the df that already exists in the db
+        df_gli = pd.merge(df_gli, existing_gli_df, left_on=["IndicatorId", "GeographicLevelId"],
+                          right_on=["IndicatorIdExist", "GeographicLevelIdExist"], how="left")
+        df_gli = df_gli[df_gli.isnull().any(1)]  # only keep the rows that aren't already in db
+        df_gli.drop(["IndicatorIdExist", "GeographicLevelIdExist"], axis=1, inplace=True)
+
     # every IndicatorID needs a row added with GeographicLevel = "SSSS" (for web display)
-    df_web_inds = df_gli.loc[:, ["IndicatorId"]].drop_duplicates(inplace=False)
-    df_web_inds["GeographicLevelId"] = "SSSS"
-    df_gli = df_gli.append(df_web_inds)
-    h.delete_var_and_release_mem([df_web_inds])
+    if not is_sibling:
+        df_web_inds = df_gli.loc[:, ["IndicatorId"]].drop_duplicates(inplace=False)
+        df_web_inds["GeographicLevelId"] = "SSSS"
+        df_gli = df_gli.append(df_web_inds)
+        h.delete_var_and_release_mem([df_web_inds])
     df_gli = df_gli.loc[:, ["IndicatorId", "GeographicLevelId"]]  # column order needeed for db insert
     return df_gli
 
@@ -178,7 +176,7 @@ def build_geography_reference_for_indicator_df(edf, idf, gdf, ivdf):
     # Indicator Values that were just added to the db (ivdf).
     df_gri = edf.loc[:, ["DGUID", "IndicatorCode", "ReferencePeriod"]]  # subset of full en dataset
     df_gri = pd.merge(df_gri, idf, on="IndicatorCode", how="left")  # join datasets
-    df_gri["IndicatorValueCode"] = df_gri["DGUID"] + "." + df_gri["IndicatorCode"]  # combine DGUID and IndicatorCode
+    df_gri["IndicatorValueCode"] = df_gri["DGUID"] + "." + df_gri["IndicatorCode"]  # combine DGUID, IndicatorCode
 
     df_gri = pd.merge(df_gri, gdf, left_on="DGUID", right_on="GeographyReferenceId", how="left")  # join geoRef for id
     df_null_geo_rf = check_null_geography_reference(df_gri)  # notify user of any DGUIDs w/o matching geoRef
@@ -204,8 +202,11 @@ def build_indicator_code(coordinate, reference_date, pid_str):
     return indicator_code
 
 
-def build_indicator_df(product_id, release_dt, dim_members, uom_codeset, ref_date_list, next_id):
-
+def build_indicator_df(product_id, release_dt, dim_members, uom_codeset, ref_date_list, next_id, min_ref_year):
+    # Build the data frame for gis.Indicator based on product_id, relase date (release_dt), dimension members
+    # (dim_members), unit of measure information (uom_codeset), list of possible reference dates (ref_date_list).
+    # next_id contains the next available indicator id, and min_ref_year specifies whether we want the df to be
+    # generated from a specific year onward.
     df = create_dimension_member_df(dim_members)  # turn dimension/member data into dataframe
     df.sort_values(by=["DimPosId", "MemberId"], inplace=True)  # Important to allow recombining columns in df later
 
@@ -264,12 +265,10 @@ def build_indicator_df(product_id, release_dt, dim_members, uom_codeset, ref_dat
                                                                                         " _ ", -2), axis=1)
 
     # Create new indicator data frame with a row for each year in the reference period
-    rd_years = h.get_years_range(ref_date_list)
-    ind_df = copy_data_frames_for_year_range(pre_df, rd_years)
+    ind_df = copy_data_frames_for_date_range(pre_df, ref_date_list, min_ref_year)
 
     # add the remaining fields that required RefYear to be built first
     ind_df["RefYear"] = ind_df["RefYear"].astype("string")
-    ind_df["ReferencePeriod"] = ind_df["RefYear"] + "-01-01"  # becomes Jan 1 TODO
     ind_df["IndicatorCode"] = str(product_id) + "." + ind_df["Coordinate"] + "." + ind_df["ReferencePeriod"]
     ind_df["IndicatorDisplay_EN"] = build_dimension_ul(ind_df["RefYear"], ind_df["IndicatorNameLong_EN"])
     ind_df["IndicatorDisplay_FR"] = build_dimension_ul(ind_df["RefYear"], ind_df["IndicatorNameLong_FR"])
@@ -429,32 +428,26 @@ def build_indicator_values_df(edf, gdf, ndf, next_id):
     return df_iv
 
 
+def build_ref_date_dimensions(ref_date_df, min_ref_year):
+    # build a dataframe of dates to add to gis.DimensionValues. If a minimum reference year is specified,
+    # only include rows with a newer date
+    ref_date_df.drop_duplicates(inplace=True)
+    ref_date_df["RefYear"].fillna("0", inplace=True)  # to prevent possible conversion error
+    ref_date_df["RefYear"] = ref_date_df["RefYear"].astype("int16")
+    if min_ref_year:
+        ind_rows = ref_date_df[ref_date_df["RefYear"] < min_ref_year].index  # row index nums to delete
+        dim_df = ref_date_df.drop(ind_rows)
+    else:
+        dim_df = ref_date_df
+    return dim_df
+
+
 def build_reference_dates(start_str, end_str, freq_code):
-    # build list of dates from start_str to end_str (will always be a string in YYYY-MM-DD format) based on freq_code
+    # build list of dates from start_str to end_str (assume YYYY-MM-DD format) based on freq_code
     # (code from WDS indicating how often the data is published). Returns dates as pandas series (datetime64[ns])
     start_dt = datetime.strptime(start_str, "%Y-%m-%d")
     end_dt = datetime.strptime(end_str, "%Y-%m-%d")
-
-    freq_dict = {
-        1: "D",  # daily
-        2: "W",  # weekly (sun)
-        4: "2W",  # every 2 weeks (sun)
-        6: "MS",  # monthly as start of month
-        7: "2MS",  # every 2 months, interpreted as every 2 months at start of month
-        9: "QS",  # quarterly as start of quarter
-        10: "4MS",  # 3 times per year, interpreted as every 4 months at start of month
-        11: "6MS",  # semi-annual, interpreted as every 6 months at start of month
-        12: "AS",  # annual as start of year
-        13: "2AS",  # every 2 years, interpreted as every 2 years at start of year
-        14: "3AS",  # every 3 years, interpreted as every 3 years at start of year
-        15: "4AS",  # every 4 years, interpreted as every 4 years at start of year
-        16: "5AS",  # every 5 years, interpreted as every 5 years at start of year
-        17: "10AS",  # every 10 years, interpreted as every 10 years at start of year
-        18: "AS",  # occasional (assumed as annual as start of year)
-        19: "QS",  # occasional quarterly (assumed as start of quarter)
-        20: "MS",  # occasional monthly (assumed as start of month)
-        21: "D"  # occasional daily (assumed as daily)
-    }
+    freq_dict = h.build_freq_code_to_pd_dict()
     fr = freq_dict[freq_code] if freq_code in freq_dict else "AS"  # default to first of each year if not in dict
     retval = pd.date_range(start_dt, end_dt, freq=fr)
     return retval
@@ -487,8 +480,8 @@ def build_related_charts_df(idf, prod_defaults, existing_md_df):
 
     # build a generic indicator code for each of the indicators. Can group by these later.
     df_rc["GenericIndicatorCode"] = df_rc.apply(lambda x: set_generic_indicator_code(x["IndicatorCode"]), axis=1)
-    df_rc["RelatedIndicatorIDs"] = df_rc.apply(lambda x: get_related_indicator_list(x["GenericIndicatorCode"], df_rc),
-                                               axis=1)
+    df_rc["RelatedIndicatorIDs"] = df_rc.apply(lambda x: get_related_indicator_list(x["GenericIndicatorCode"], df_rc,
+                                                                                    x["RelatedChartId"]), axis=1)
 
     df_rc["Query"] = "SELECT iv.value AS Value, CASE WHEN iv.value IS NULL THEN nr.symbol ELSE " + df_rc["en_format"] \
                      + " END AS FormattedValue_EN, CASE WHEN iv.value IS NULL THEN nr.symbol ELSE " + \
@@ -530,15 +523,22 @@ def check_null_geography_reference(df):
     return df_null_gr
 
 
-def copy_data_frames_for_year_range(df_to_copy, year_list):
-    # When passed a dataframe (df_to_copy) and a list of years(year_list), build a copy of the dataframe
-    # for each year and add it to a list. The list is then combined into one big dataframe and returned in ref_df.
+def copy_data_frames_for_date_range(df_to_copy, ref_date_list, min_ref_year):
+    # When passed a dataframe (df_to_copy) and a list of reference dates (ref_date_list), build a copy of the dataframe
+    # for each reference and add it to a list. The list is then combined into one big dataframe and returned in ref_df.
+    # If min_ref_year is present, only include dates after the first of that year.
     df_list = []
-    for rel_year in year_list:
+    for num, ref_date in enumerate(ref_date_list):
         tmp_df = df_to_copy.copy()
-        tmp_df["RefYear"] = rel_year
-        df_list.append(tmp_df)
-    ret_df = pd.concat(df_list)  # combine into one dataframe
+        tmp_year = str(ref_date)[:4]
+        if (min_ref_year and int(tmp_year) >= min_ref_year) or min_ref_year is False:
+            tmp_df["RefYear"] = tmp_year
+            tmp_df["ReferencePeriod"] = ref_date.strftime("%Y-%m-%d")
+            df_list.append(tmp_df)
+    try:
+        ret_df = pd.concat(df_list)  # combine into one dataframe
+    except ValueError:
+        ret_df = df_list
     return ret_df
 
 
@@ -556,26 +556,31 @@ def create_dimension_member_df(dim_members):
     return dm_df
 
 
-def fix_dguid(vintage, orig_dguid, is_crime_table):
-    # verify that the dguid is valid. If it isn't, try to build a new one. For now this only applies to tables
-    # flagged as a crime table. Format: VVVVTSSSSGGGGGGGGGGGG (V-vintage(4), T-type(1), S-schema(4), G-GUID(1-12)
+def fix_dguid(vintage, orig_dguid, prod_id):
+    # verify that the dguid is valid. If it is a crime table (subject code 35) without proper DGUIDs, build one.
+    # Format: VVVVTSSSSGGGGGGGGGGGG (V-vintage(4), T-type(1), S-schema(4), G-GUID(1-12) - 10-21 characters total
     new_dguid = str(orig_dguid)
-    if is_crime_table and len(orig_dguid) < 10:
-        geo_type_schema = 'A0025'
-        if int(vintage) < 2016:  # special case from crime tables --> 1998-2015 use 2016 geographies.
-            new_dguid = '2016' + geo_type_schema + orig_dguid
+    subject_code = str(prod_id)[:2]
+    if subject_code == "35" and len(new_dguid) < 10:
+        geo_type_schema = "A0025"
+        if int(vintage) < 2016:
+            new_dguid = "2016" + geo_type_schema + orig_dguid  # 1998-2015 crime data uses 2016 geographies.
         else:
             new_dguid = str(vintage) + geo_type_schema + orig_dguid
     return new_dguid
 
 
-def get_related_indicator_list(generic_ind_code, idf):
-    # For the specified indicator dataframe (idf), find rows with an IndicatorCode that matches generic_ind_code.
-    # Build a list of the matching IndicatorIDs, and return the list as a comma
+def get_related_indicator_list(generic_ind_code, idf, related_chart_id):
+    # For the specified indicator dataframe (idf), find up to 10 rows with an IndicatorCode that matches
+    # generic_ind_code. Build a list of the matching IndicatorIDs, and return the list as a comma
     # separated string. This is used to find related indicator ids for gis.RelatedCharts.
     filtered_ind_df = idf.loc[(idf["GenericIndicatorCode"] == generic_ind_code)]
     filtered_ind_df["IndicatorId"] = filtered_ind_df["IndicatorId"].astype("string")
     indicator_id_list = filtered_ind_df["IndicatorId"].tolist()
+    if len(indicator_id_list) > 10:
+        indicator_id_list = indicator_id_list[:10]
+    elif len(indicator_id_list) == 0:
+        indicator_id_list = [str(related_chart_id)]
     indicator_id_str = ','.join(indicator_id_list)
     return indicator_id_str
 
@@ -610,23 +615,27 @@ def set_uom_format(uom_id, lang, chart_type_id):
     return format_str
 
 
-def setup_chunk_columns(cdf, prod_id_str, rel_date, is_crime_table):
+def setup_chunk_columns(cdf, prod_id_str, rel_date, min_ref_year):
     # set up the columns in a dataframe chunk of data from the csv file (cdf) for the specified product (prod_id_str)
-    # and release date (rel_date). is_crime_table indicates whether it is one of the crime tables.
+    # and release date (rel_date). If min_ref_year is included, exclude any rows with older dates.
     chunk_df = cdf
     chunk_df["IndicatorCode"] = build_indicator_code(chunk_df["COORDINATE"], chunk_df["REF_DATE"], prod_id_str)
     chunk_df.drop(["COORDINATE"], axis=1, inplace=True)  # not nec. after IndicatorCode
     chunk_df.rename(columns={"VECTOR": "Vector", "UOM": "UOM_EN"}, inplace=True)  # match db
     chunk_df["RefYear"] = chunk_df["REF_DATE"].map(h.fix_ref_year).astype("string")  # need 4 digit year
     chunk_df["DGUID"] = chunk_df["DGUID"].str.replace(".", "").str.replace("201A", "2015A")  # from powerBI process
-    # some DGUIDs are not built properly in the dataset (ex. crime statistics) - fix these
-    chunk_df["DGUID"] = chunk_df.apply(lambda x: fix_dguid(x["RefYear"], x["DGUID"], is_crime_table), axis=1)
+    chunk_df["DGUID"] = chunk_df.apply(lambda x: fix_dguid(x["RefYear"], x["DGUID"], prod_id_str), axis=1)  # fix crime
     chunk_df["IndicatorThemeID"] = prod_id_str
     chunk_df["ReleaseIndicatorDate"] = rel_date
     chunk_df["ReferencePeriod"] = chunk_df["RefYear"] + "-01-01"  # becomes Jan 1
     chunk_df["ReferencePeriod"] = chunk_df["ReferencePeriod"].astype("datetime64[ns]")
     chunk_df["Vector"] = chunk_df["Vector"].str.replace("v", "").astype("int32")
     chunk_df["GeographicLevelId"] = chunk_df["DGUID"].str[4:9]  # extract geo level id
+    if min_ref_year:
+        chunk_df["IntYear"] = chunk_df["RefYear"].astype("int16")  # temp column for comparison
+        ind_rows = chunk_df[chunk_df["IntYear"] < min_ref_year].index  # row index nums to delete
+        chunk_df.drop(ind_rows, inplace=True)
+        chunk_df.drop(["IntYear"], inplace=True, axis=1)
     return chunk_df
 
 

@@ -29,42 +29,46 @@ class sqlDb(object):
         log.info("Setting up SQL Alchemy engine.\n")
         self.engine = create_engine("mssql+pyodbc:///?odbc_connect=%s" % sa_params, fast_executemany=True)
 
-    def delete_product(self, product_id):
-        # Delete queries are in order as described in confluence document for deleting a product
-        # Note: We are not deleting the data from Dimensions, DimensionValues, or IndicatorTheme
+    def delete_product(self, product_id, is_sibling_product):
+        # Delete queries are in order as described in confluence document for deleting a product (product_id).
+        # Sibling tables (is_sibling_product = True) are not deleted b/c this is done with the master product.
+        # Note: We are not deleting the data from Dimensions, DimensionValues, or IndicatorTheme.
         retval = False
-        pid = str(product_id)
-        pid_subqry = "SELECT IndicatorId FROM gis.Indicator WHERE IndicatorThemeId = ? "
-        qry1 = "DELETE FROM gis.RelatedCharts WHERE RelatedChartId IN (" + pid_subqry + ") "
-        qry2 = "DELETE FROM gis.IndicatorMetaData WHERE IndicatorId IN (" + pid_subqry + ") "
-        qry3 = "DELETE FROM gis.IndicatorValues WHERE IndicatorValueId IN (" \
-               "SELECT IndicatorValueId FROM gis.GeographyReferenceForIndicator WHERE IndicatorId IN " \
-               "(" + pid_subqry + ")) "  # OR IndicatorValueCode like '%" + pid + "%'"  # added 2nd clause
-        qry4 = "DELETE FROM gis.GeographyReferenceForIndicator WHERE IndicatorId in (" + pid_subqry + ") "
-        qry5 = "DELETE FROM gis.GeographicLevelForIndicator WHERE IndicatorId in (" + pid_subqry + ") "
-        qry6 = "DELETE FROM gis.Indicator WHERE IndicatorThemeId = ?"
-
-        try:
-            log.info("Deleting from gis.RelatedCharts.")
-            self.cursor.execute(qry1, pid)
-            log.info("Deleting from gis.IndicatorMetaData.")
-            self.cursor.execute(qry2, pid)
-            log.info("Deleting from gis.IndicatorValues.")
-            self.cursor.execute(qry3, pid)
-            log.info("Deleting from gis.GeographyReferenceForIndicator.")
-            self.cursor.execute(qry4, pid)
-            log.info("Deleting from gis.GeographyLevelForIndicator.")
-            self.cursor.execute(qry5, pid)
-            log.info("Deleting from gis.Indicator.")
-            self.cursor.execute(qry6, pid)
-        except pyodbc.Error as err:
-            self.cursor.rollback()
-            log.error("Could not delete product from database. See detailed message below:")
-            log.error(str(err))
-        else:
-            self.cursor.commit()
+        if is_sibling_product:
             retval = True
-            log.info("Successfully deleted product.\n")
+        else:
+            pid = str(product_id)
+            pid_subqry = "SELECT IndicatorId FROM gis.Indicator WHERE IndicatorThemeId = ? "
+            qry1 = "DELETE FROM gis.RelatedCharts WHERE RelatedChartId IN (" + pid_subqry + ") "
+            qry2 = "DELETE FROM gis.IndicatorMetaData WHERE IndicatorId IN (" + pid_subqry + ") "
+            qry3 = "DELETE FROM gis.IndicatorValues WHERE IndicatorValueId IN (" \
+                   "SELECT IndicatorValueId FROM gis.GeographyReferenceForIndicator WHERE IndicatorId IN " \
+                   "(" + pid_subqry + ")) "  # OR IndicatorValueCode like '%" + pid + "%'"  # added 2nd clause
+            qry4 = "DELETE FROM gis.GeographyReferenceForIndicator WHERE IndicatorId in (" + pid_subqry + ") "
+            qry5 = "DELETE FROM gis.GeographicLevelForIndicator WHERE IndicatorId in (" + pid_subqry + ") "
+            qry6 = "DELETE FROM gis.Indicator WHERE IndicatorThemeId = ?"
+
+            try:
+                log.info("Deleting from gis.RelatedCharts.")
+                self.cursor.execute(qry1, pid)
+                log.info("Deleting from gis.IndicatorMetaData.")
+                self.cursor.execute(qry2, pid)
+                log.info("Deleting from gis.IndicatorValues.")
+                self.cursor.execute(qry3, pid)
+                log.info("Deleting from gis.GeographyReferenceForIndicator.")
+                self.cursor.execute(qry4, pid)
+                log.info("Deleting from gis.GeographyLevelForIndicator.")
+                self.cursor.execute(qry5, pid)
+                log.info("Deleting from gis.Indicator.")
+                self.cursor.execute(qry6, pid)
+            except pyodbc.Error as err:
+                self.cursor.rollback()
+                log.error("Could not delete product from database. See detailed message below:")
+                log.error(str(err))
+            else:
+                self.cursor.commit()
+                retval = True
+                log.info("Successfully deleted product.\n")
         return retval
 
     def execute_simple_select_query(self, query):
@@ -101,14 +105,29 @@ class sqlDb(object):
         retval = pd.read_sql(query, self.connection, params=[pid])
         return retval
 
+    def get_geo_levels(self, pid):
+        # return from GeographicLevelForIndicator for specified productid
+        query = "SELECT GeographicLevelId AS GeographicLevelIdExist, IndicatorId AS IndicatorIdExist FROM " \
+                "gis.GeographicLevelForIndicator WHERE IndicatorId IN (SELECT IndicatorId FROM gis.Indicator WHERE " \
+                "IndicatorThemeId = ?)"
+        retval = pd.read_sql(query, self.connection, params=[pid])
+        return retval
+
     def get_geo_reference_ids(self):
         # return all ids from gis.GeographyReference as a pandas dataframe
         query = "SELECT GeographyReferenceId FROM gis.GeographyReference"
         retval = pd.read_sql(query, self.connection)
         return retval
 
+    def get_indicators(self, pid):
+        pid = int(pid)
+        query = "SELECT * from gis.Indicator WHERE IndicatorThemeId = ? "
+        retval = pd.read_sql(query, self.connection, params=[pid])
+        return retval
+
     def get_indicator_chart_info(self, pid):
         # return chart information from gis.IndicatorMetaData and gis.RelatedCharts for the specified product (pid)
+        pid = int(pid)
         query = "SELECT i.IndicatorThemeId, i.IndicatorCode, im.DefaultBreaksAlgorithmId, im.DefaultBreaks, " \
                 "im.PrimaryChartTypeId ,im.ColorTo ,im.ColorFrom, r.ChartTypeId, r.ChartTitle_EN, r.ChartTitle_FR, " \
                 "r.FieldAlias_EN, r.FieldAlias_FR FROM gis.Indicator AS i LEFT JOIN gis.IndicatorMetaData " \
