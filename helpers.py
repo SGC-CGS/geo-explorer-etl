@@ -107,6 +107,14 @@ def get_nth_item_from_string_list(item_list, delim, n=None):
     return retval
 
 
+def get_partitioned_string(search_str, delim):
+    # Search string (search_str) for first match of specified delimiter (delim).
+    # Example: "Crime and justice/Crimes and offences/Homicides" --> "Crimes and offences/Homicides"
+    str_tup = search_str.partition(delim)  # tuple ex. ("Crime and justice", "/" , "Crimes and offences/Homicides")
+    retval = str_tup[2] if str_tup[2] != "" else search_str  # if no match on delim, send back original str
+    return retval
+
+
 def get_subject_desc_from_code_set(subject_code, subject_codeset, lang):
     # retrieve unit of measure description for the specified subject_code and language (lang)
     retval = ""
@@ -117,7 +125,7 @@ def get_subject_desc_from_code_set(subject_code, subject_codeset, lang):
     subject_code = str(subject_code)
     if subject_code != "":
         retval = next(
-            (row[field_name]
+            (get_partitioned_string(row[field_name], "/")
              for row in subject_codeset
              if row["subjectCode"] == subject_code), None)
     return retval
