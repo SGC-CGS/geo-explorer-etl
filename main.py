@@ -38,7 +38,8 @@ if __name__ == "__main__":
     existing_prod_ids = db.get_matching_product_list(prod_id)  # check whether product already exists in db
     if len(existing_prod_ids) > 0 and insert_new_table:
         arg.show_help_and_exit_with_msg("\nCannot insert product because one or more Product IDs already exist in "
-                                        "gis.IndicatorTheme. Run without -i to append data. " + str(existing_prod_ids))
+                                        "gis.IndicatorTheme/gis.Dimensions. Run without -i to append data. " +
+                                        str(existing_prod_ids))
     elif len(existing_prod_ids) == 0 and prod_id and not insert_new_table:
         arg.show_help_and_exit_with_msg("\nCannot append Product ID because it does not exist in gis.IndicatorTheme. "
                                         "Run with -i to add a new product. " + str(prod_id))

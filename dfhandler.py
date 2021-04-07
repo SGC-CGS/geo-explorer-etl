@@ -557,16 +557,26 @@ def create_dimension_member_df(dim_members):
 
 
 def fix_dguid(vintage, orig_dguid, prod_id):
-    # verify that the dguid is valid. If it is a crime table (subject code 35) without proper DGUIDs, build one.
+    # Make any necessary corrections to the DGUID.
     # Format: VVVVTSSSSGGGGGGGGGGGG (V-vintage(4), T-type(1), S-schema(4), G-GUID(1-12) - 10-21 characters total
     new_dguid = str(orig_dguid)
     subject_code = str(prod_id)[:2]
-    if subject_code == "35" and len(new_dguid) < 10:
-        geo_type_schema = "A0025"
-        if int(vintage) < 2016:
-            new_dguid = "2016" + geo_type_schema + orig_dguid  # 1998-2015 crime data uses 2016 geographies.
-        else:
-            new_dguid = str(vintage) + geo_type_schema + orig_dguid
+    if subject_code == "35" and not (new_dguid == "<NA>"):  # special handling of justice tables (subj code 35)
+        if len(new_dguid) < 10:  # If DGUID is too short, add the missing vintage and geo level to police district
+            dguid_year = "2016" if int(vintage) < 2016 else str(vintage)  # 1998-2015 uses 2016 geographies
+            new_dguid = dguid_year + "A0025" + orig_dguid
+
+        # fixes additional individual DGUID errors that need to be corrected *before* vintage correction
+        new_dguid = new_dguid.replace("2011B", "2011S")  # typo in schema
+        new_dguid = new_dguid.replace("2011S05031", "2011S0503001")  # St. John's typo in DGUID
+
+        # Aside from the short DGUID case above, CMAs (S0503) incorrectly use 2011 vintage. Correction for data >= 2016.
+        new_dguid = new_dguid.replace("2011S0503", str(vintage) + "S0503") if int(vintage) >= 2016 else new_dguid
+
+        # fixes additional individual DGUID errors that need to be corrected *after* vintage correction
+        new_dguid = new_dguid.replace("2011S0503522", "2011S0504522")  # Belleville was a CA <= 2011
+        new_dguid = new_dguid.replace("2011S0503810", "2011S0504810")  # Lethbridge was a CA <= 2011
+
     return new_dguid
 
 
