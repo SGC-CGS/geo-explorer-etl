@@ -63,13 +63,14 @@ if __name__ == "__main__":
         else:
             pid_meta = scwds.build_metadata_dict(wds.get_cube_metadata(ind_theme_id), ind_theme_id)  # product metadata
             ex_subj = db.get_matching_product_list([pid_meta["subject_code"]])  # existing 2-5 digit subject code
-            ex_subj_short = db.get_matching_product_list(
-                [pid_meta["subject_code_short"]])  # existing 2 digit subject code
+            ex_subj_short = db.get_matching_product_list([pid_meta["subject_code_short"]])  # existing subject code (2)
+            ex_subj_dummy = db.get_matching_product_list([str(pid_meta["subject_code"]) + "99"])  # also check dummy
+            ex_subj_short_dummy = db.get_matching_product_list([str(pid_meta["subject_code_short"]) + "9999"])
 
             # insert to gis.IndicatorTheme
             logger.info("Adding product to IndicatorTheme table.")
-            df_ind_theme = dfh.build_indicator_theme_df(pid_meta, ind_theme_id, ex_subj, ex_subj_short,
-                                                        wds.subject_codes)
+            df_ind_theme = dfh.build_indicator_theme_df(pid_meta, ind_theme_id, ex_subj, ex_subj_short, ex_subj_dummy,
+                                                        ex_subj_short_dummy, wds.subject_codes)
             it_result = db.insert_dataframe_rows(df_ind_theme, "IndicatorTheme", "gis")
             h.delete_var_and_release_mem([df_ind_theme])
 

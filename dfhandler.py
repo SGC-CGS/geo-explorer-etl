@@ -364,10 +364,12 @@ def build_indicator_metadata_df(idf, prod_defaults, dkdf, existing_md_df):
     return df_im
 
 
-def build_indicator_theme_df(prod_md, indicator_theme_id, sc_row_count, scs_row_count, subj_codes):
+def build_indicator_theme_df(prod_md, indicator_theme_id, sc_row_count, scs_row_count, sc_dummy_row_count,
+                             scs_dummy_row_count, subj_codes):
     # build the dataframe for IndicatorTheme using the product metadata (prod_md), indicator theme id.
     # sc_row_count and scs_row_count indicate whether the parent subject codes for the indicator theme id
     # already exist in the database, subj_codes is a master list of all subject codes.
+    # sc_dummy_row_count and scs_dummy_row_count do the same for the dummy codes.
     itdf = pd.DataFrame({"IndicatorThemeId": [indicator_theme_id], "IndicatorTheme_EN": [prod_md["title_en"]],
                          "IndicatorTheme_FR": [prod_md["title_fr"]],
                          "StatisticsProgramId": [int(prod_md["survey_code"])],
@@ -377,17 +379,19 @@ def build_indicator_theme_df(prod_md, indicator_theme_id, sc_row_count, scs_row_
     if len(sc_row_count) == 0 and len(prod_md["subject_code"]) > 2:
         en_sub = h.get_subject_desc_from_code_set(prod_md["subject_code"], subj_codes, "en")
         fr_sub = h.get_subject_desc_from_code_set(prod_md["subject_code"], subj_codes, "fr")
-        itdf.loc[itdf.shape[0] + 1] = [int(str(prod_md["subject_code"]) + "99"), "...Select a Product",
-                                       "...Sélectionnez un produit", None, int(prod_md["subject_code"])]
         itdf.loc[itdf.shape[0] + 1] = [prod_md["subject_code"], en_sub, fr_sub, None,
                                        int(prod_md["subject_code_short"])]
+    if len(sc_dummy_row_count) == 0 and len(prod_md["subject_code"]) > 2:
+        itdf.loc[itdf.shape[0] + 1] = [int(str(prod_md["subject_code"]) + "99"), "*...Select a Product",
+                                       "*...Sélectionnez un produit", None, int(prod_md["subject_code"])]
 
     if len(scs_row_count) == 0:
         en_sub = h.get_subject_desc_from_code_set(prod_md["subject_code_short"], subj_codes, "en")
         fr_sub = h.get_subject_desc_from_code_set(prod_md["subject_code_short"], subj_codes, "fr")
-        itdf.loc[itdf.shape[0] + 1] = [int(str(prod_md["subject_code_short"]) + "9999"), "...Select a Theme ",
-                                           "...Sélectionnez un thème", None, prod_md["subject_code_short"]]
         itdf.loc[itdf.shape[0] + 1] = [prod_md["subject_code_short"], en_sub, fr_sub, None, None]
+    if len(scs_dummy_row_count) == 0:
+        itdf.loc[itdf.shape[0] + 1] = [int(str(prod_md["subject_code_short"]) + "9999"), "*...Select a Theme ",
+                                           "*...Sélectionnez un thème", None, prod_md["subject_code_short"]]
 
     # set fields common to all rows in dataframe
     itdf["IndicatorThemeDescription_EN"] = itdf["IndicatorTheme_EN"]
