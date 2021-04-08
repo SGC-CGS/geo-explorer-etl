@@ -373,16 +373,20 @@ def build_indicator_theme_df(prod_md, indicator_theme_id, sc_row_count, scs_row_
                          "StatisticsProgramId": [int(prod_md["survey_code"])],
                          "ParentThemeId": [int(prod_md["subject_code"])]})
 
-    # add the parent subject codes to the df if necessary
+    # add the parent subject codes to the df if necessary, along with selection option required by web app
     if len(sc_row_count) == 0 and len(prod_md["subject_code"]) > 2:
         en_sub = h.get_subject_desc_from_code_set(prod_md["subject_code"], subj_codes, "en")
         fr_sub = h.get_subject_desc_from_code_set(prod_md["subject_code"], subj_codes, "fr")
+        itdf.loc[itdf.shape[0] + 1] = [int(str(prod_md["subject_code"]) + "99"), "...Select a Product",
+                                       "...Sélectionnez un produit", None, int(prod_md["subject_code"])]
         itdf.loc[itdf.shape[0] + 1] = [prod_md["subject_code"], en_sub, fr_sub, None,
                                        int(prod_md["subject_code_short"])]
 
     if len(scs_row_count) == 0:
         en_sub = h.get_subject_desc_from_code_set(prod_md["subject_code_short"], subj_codes, "en")
         fr_sub = h.get_subject_desc_from_code_set(prod_md["subject_code_short"], subj_codes, "fr")
+        itdf.loc[itdf.shape[0] + 1] = [int(str(prod_md["subject_code_short"]) + "9999"), "...Select a Theme ",
+                                           "...Sélectionnez un thème", None, prod_md["subject_code_short"]]
         itdf.loc[itdf.shape[0] + 1] = [prod_md["subject_code_short"], en_sub, fr_sub, None, None]
 
     # set fields common to all rows in dataframe
