@@ -15,6 +15,10 @@ WORK_DIR = str(pathlib.Path(__file__).parent.absolute())  # current script path
 default_chart_json = WORK_DIR + "\\product_defaults.json"  # default chart info for specific products
 products_to_merge_json = WORK_DIR + "\\products_to_merge.json"  # products to be merged to a single IndicatorThemeID
 
+# Products w/ mixed geographies need special handling of reference periods (can/prov/region - all data, others 2017+)
+# Note only the master product id is included here when it is a merged product. TODO --> find a cleaner way to do this
+mixed_geo_justice_pids = [35100177, 35100002, 35100026, 35100068]
+
 logger = h.setup_logger(WORK_DIR, "etl_log")  # set up logging to file and console
 
 arg = arguments.argParser()  # get CLI arguments
@@ -64,8 +68,11 @@ if __name__ == "__main__":
             pid_meta = scwds.build_metadata_dict(wds.get_cube_metadata(ind_theme_id), ind_theme_id)  # product metadata
             ex_subj = db.get_matching_product_list([pid_meta["subject_code"]])  # existing 2-5 digit subject code
             ex_subj_short = db.get_matching_product_list([pid_meta["subject_code_short"]])  # existing subject code (2)
-            ex_subj_dummy = db.get_matching_product_list([str(pid_meta["subject_code"]) + "99"])  # also check dummy
-            ex_subj_short_dummy = db.get_matching_product_list([str(pid_meta["subject_code_short"]) + "9999"])
+            ex_subj_dummy = db.get_matching_product_list(
+                [str(pid_meta["subject_code"]) + h.create_dummy_subject_code_suffix(pid_meta["subject_code"])])
+            ex_subj_short_dummy = db.get_matching_product_list(
+                [str(pid_meta["subject_code_short"]) +
+                 h.create_dummy_subject_code_suffix(pid_meta["subject_code_short"])])
 
             # insert to gis.IndicatorTheme
             logger.info("Adding product to IndicatorTheme table.")
@@ -132,6 +139,7 @@ if __name__ == "__main__":
         is_master = jh.is_master_in_merged_product(pid, merged_prod_dict)
         is_sibling = jh.is_sibling_in_merged_product(pid, merged_prod_dict)
         master_pid_str = jh.get_master_prod_id(pid, merged_prod_dict) if is_sibling else ""
+        functional_pid_str = master_pid_str if is_sibling else pid_str  # pid that will be saved to db for this product
 
         # Download the product
         if wds.get_full_table_download(pid, "en", pid_folder + ".zip") and h.valid_zip_file(pid_folder + ".zip"):
@@ -160,12 +168,12 @@ if __name__ == "__main__":
                     logger.info("Retrieving Indicator information from master product.")
                     df_ind = db.get_indicators(master_pid_str)
                     df_ind = df_ind.loc[:, ["IndicatorId", "IndicatorCode", "UOM_EN", "UOM_FR"]]
-
                 else:
                     logger.info("Updating Indicator table.")
                     next_ind_id = db.get_last_table_id("IndicatorId", "Indicator", "gis") + 1  # setup unique IDs
                     df_ind = dfh.build_indicator_df(pid, pid_meta["release_date"], pid_meta["dimensions_and_members"],
-                                                    wds.uom_codes, ref_dates, next_ind_id, min_ref_year)
+                                                    wds.uom_codes, ref_dates, next_ind_id, min_ref_year,
+                                                    mixed_geo_justice_pids)
                     # subset for insert and keep only fields needed for next table inserts.
                     db.insert_dataframe_rows(dfh.build_indicator_df_subset(df_ind), "Indicator", "gis")
                     df_ind = df_ind.loc[:, ["IndicatorId", "IndicatorCode", "IndicatorFmt", "UOM_EN", "UOM_FR",
@@ -185,18 +193,15 @@ if __name__ == "__main__":
                 with zipfile.ZipFile(pid_folder + ".zip") as zf:  # reads in zipped csvas chunks w/o full extraction
                     for csv_chunk in pd.read_csv(zf.open(pid_str + ".csv"), chunksize=20000, sep=",",
                                                  usecols=list(col_dict.keys()), dtype=col_dict):  # NO compression flag
-                        # build formatted cols
-                        if is_sibling:
-                            # sibling tables will be saved under the master product id
-                            chunk_data = dfh.setup_chunk_columns(csv_chunk, master_pid_str, pid_meta["release_date"],
-                                                                 min_ref_year)
-                        else:
-                            chunk_data = dfh.setup_chunk_columns(csv_chunk, pid_str, pid_meta["release_date"],
-                                                                 min_ref_year)
+
+                        # build formatted cols - sibling tables will be saved under the master product id
+                        chunk_data = dfh.setup_chunk_columns(csv_chunk, functional_pid_str, pid_meta["release_date"],
+                                                                 min_ref_year, mixed_geo_justice_pids)
 
                         # keep unique reference dates for gis.DimensionValues
-                        ref_date_chunk = chunk_data.loc[:, ["REF_DATE", "RefYear"]]
-                        ref_date_dim.append(dfh.build_ref_date_dimensions(ref_date_chunk, min_ref_year))
+                        ref_date_chunk = chunk_data.loc[:, ["REF_DATE", "RefYear", "GeographicLevelId"]]
+                        ref_date_dim.append(dfh.build_ref_date_dimensions(ref_date_chunk, min_ref_year,
+                                                                          functional_pid_str, mixed_geo_justice_pids))
 
                         # keep track of the geographic level for each indicator
                         geo_chunk = chunk_data.loc[:, ["GeographicLevelId", "IndicatorCode"]]
@@ -204,7 +209,9 @@ if __name__ == "__main__":
 
                         # gis.IndicatorValues
                         next_ind_val_id = db.get_last_table_id("IndicatorValueId", "IndicatorValues", "gis") + 1  # IDs
-                        df_ind_val = dfh.build_indicator_values_df(chunk_data, df_geo_ref, df_ind_null, next_ind_val_id)
+                        df_ind_val = dfh.build_indicator_values_df(chunk_data, df_geo_ref, df_ind_null,
+                                                                   next_ind_val_id, functional_pid_str,
+                                                                   mixed_geo_justice_pids)
                         iv_result = db.insert_dataframe_rows(df_ind_val, "IndicatorValues", "gis")
                         df_ind_val.drop(["VALUE", "NullReasonId"], axis=1, inplace=True)  # save for next insert
 
@@ -229,10 +236,7 @@ if __name__ == "__main__":
                 # GeographicLevelforIndicator - from what was built above feed next to df
                 logger.info("\nUpdating GeographicLevelForIndicator table.")
                 geo_df = pd.concat(geo_levels)  # puts all the geo_levels dataframes together
-                if is_sibling:
-                    existing_geo_levels_df = db.get_geo_levels(master_pid_str)
-                else:
-                    existing_geo_levels_df = db.get_geo_levels(pid_str)
+                existing_geo_levels_df = db.get_geo_levels(functional_pid_str)
 
                 df_gli = dfh.build_geographic_level_for_indicator_df(geo_df, df_ind, existing_geo_levels_df, is_sibling)
                 db.insert_dataframe_rows(df_gli, "GeographicLevelForIndicator", "gis")
@@ -242,13 +246,9 @@ if __name__ == "__main__":
                 # DimensionValues - from ref_date list created above, add any missing values to false "Date" dimension
                 logger.info("Adding new reference dates to DimensionValues table.")
                 file_ref_dates_df = pd.concat(ref_date_dim).drop_duplicates(inplace=False)  # combine file ref_dates
-                # find ref_dates already in db under the DimensionId for "Date"
-                if is_sibling:
-                    existing_ref_dates_df = db.get_date_dimension_values(master_pid_str)  # siblings use master id
-                    date_dimension_id = db.get_date_dimension_id_for_product(master_pid_str)
-                else:
-                    existing_ref_dates_df = db.get_date_dimension_values(pid_str)
-                    date_dimension_id = db.get_date_dimension_id_for_product(pid_str)
+                # find ref_dates already in db under the DimensionId for "Date" - siblings use master id
+                existing_ref_dates_df = db.get_date_dimension_values(functional_pid_str)
+                date_dimension_id = db.get_date_dimension_id_for_product(functional_pid_str)
                 next_dim_val_id = db.get_last_table_id("DimensionValueId", "DimensionValues", "gis") + 1  # next ID
                 next_dim_val_display_order = db.get_last_date_dimension_display_order(date_dimension_id) + 1  # next ord
                 df_dv = dfh.build_date_dimension_values_df(file_ref_dates_df, existing_ref_dates_df, date_dimension_id,

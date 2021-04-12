@@ -202,11 +202,12 @@ def build_indicator_code(coordinate, reference_date, pid_str):
     return indicator_code
 
 
-def build_indicator_df(product_id, release_dt, dim_members, uom_codeset, ref_date_list, next_id, min_ref_year):
+def build_indicator_df(product_id, release_dt, dim_members, uom_codeset, ref_date_list, next_id, min_ref_year,
+                       mixed_geo_justice_pids):
     # Build the data frame for gis.Indicator based on product_id, relase date (release_dt), dimension members
     # (dim_members), unit of measure information (uom_codeset), list of possible reference dates (ref_date_list).
     # next_id contains the next available indicator id, and min_ref_year specifies whether we want the df to be
-    # generated from a specific year onward.
+    # generated from a specific year onward. Justice tables w/ mixed geo levels have special date handling.
     df = create_dimension_member_df(dim_members)  # turn dimension/member data into dataframe
     df.sort_values(by=["DimPosId", "MemberId"], inplace=True)  # Important to allow recombining columns in df later
 
@@ -265,7 +266,7 @@ def build_indicator_df(product_id, release_dt, dim_members, uom_codeset, ref_dat
                                                                                         " _ ", -2), axis=1)
 
     # Create new indicator data frame with a row for each year in the reference period
-    ind_df = copy_data_frames_for_date_range(pre_df, ref_date_list, min_ref_year)
+    ind_df = copy_data_frames_for_date_range(pre_df, ref_date_list, min_ref_year, product_id, mixed_geo_justice_pids)
 
     # add the remaining fields that required RefYear to be built first
     ind_df["RefYear"] = ind_df["RefYear"].astype("string")
@@ -382,16 +383,20 @@ def build_indicator_theme_df(prod_md, indicator_theme_id, sc_row_count, scs_row_
         itdf.loc[itdf.shape[0] + 1] = [prod_md["subject_code"], en_sub, fr_sub, None,
                                        int(prod_md["subject_code_short"])]
     if len(sc_dummy_row_count) == 0 and len(prod_md["subject_code"]) > 2:
-        itdf.loc[itdf.shape[0] + 1] = [int(str(prod_md["subject_code"]) + "99"), "*...Select a Product",
-                                       "*...Sélectionnez un produit", None, int(prod_md["subject_code"])]
+        itdf.loc[itdf.shape[0] + 1] = [int(str(prod_md["subject_code"]) +
+                                           h.create_dummy_subject_code_suffix(prod_md["subject_code"])),
+                                       "*...Select a Product", "*...Sélectionnez un produit", None,
+                                       int(prod_md["subject_code"])]
 
     if len(scs_row_count) == 0:
         en_sub = h.get_subject_desc_from_code_set(prod_md["subject_code_short"], subj_codes, "en")
         fr_sub = h.get_subject_desc_from_code_set(prod_md["subject_code_short"], subj_codes, "fr")
         itdf.loc[itdf.shape[0] + 1] = [prod_md["subject_code_short"], en_sub, fr_sub, None, None]
     if len(scs_dummy_row_count) == 0:
-        itdf.loc[itdf.shape[0] + 1] = [int(str(prod_md["subject_code_short"]) + "9999"), "*...Select a Theme ",
-                                           "*...Sélectionnez un thème", None, prod_md["subject_code_short"]]
+        itdf.loc[itdf.shape[0] + 1] = [int(str(prod_md["subject_code_short"]) +
+                                           h.create_dummy_subject_code_suffix(prod_md["subject_code_short"])),
+                                           "*...Select a Theme ", "*...Sélectionnez un thème", None,
+                                           prod_md["subject_code_short"]]
 
     # set fields common to all rows in dataframe
     itdf["IndicatorThemeDescription_EN"] = itdf["IndicatorTheme_EN"]
@@ -410,11 +415,16 @@ def build_indicator_theme_df(prod_md, indicator_theme_id, sc_row_count, scs_row_
     return itdf
 
 
-def build_indicator_values_df(edf, gdf, ndf, next_id):
-    # build the data frame for IndicatorValues
-    # based on dataframe of english csv file (edf), GeographyReference ids (gdf), and NullReason ids (ndf).
-    # populate indicator value ids starting from next_id.
+def build_indicator_values_df(edf, gdf, ndf, next_id, prod_id, mixed_geo_justice_pids):
+    # build the data frame for IndicatorValues based on dataframe of english csv file (edf),
+    # GeographyReference ids (gdf), and NullReason ids (ndf). Populate indicator value ids starting from next_id.
+    # mixed_geo_justice_pids indicates justice tables that have special date handling.
     # also collect and return unique GeographicLevelIDs
+
+    # Justice products with mixed geos: remove rows < 2017 if geolevel is not in national, provincial, regional level
+    if int(prod_id) in mixed_geo_justice_pids:
+        edf.drop(edf[(edf["RefYear"].astype("int16") < 2017) &
+                     (~edf["GeographicLevelId"].isin(["A0000", "A0001", "A0002"]))].index, inplace=True)
 
     df_iv = edf.loc[:, ["DGUID", "IndicatorCode", "STATUS", "VALUE"]]  # subset of full en dataset
     df_iv["IndicatorValueId"] = h.create_id_series(edf, next_id)  # populate IDs
@@ -436,13 +446,15 @@ def build_indicator_values_df(edf, gdf, ndf, next_id):
     return df_iv
 
 
-def build_ref_date_dimensions(ref_date_df, min_ref_year):
+def build_ref_date_dimensions(ref_date_df, min_ref_year, prod_id, mixed_geo_justice_pids):
     # build a dataframe of dates to add to gis.DimensionValues. If a minimum reference year is specified,
-    # only include rows with a newer date
+    # only include rows with a newer date (unless it is a justice product with mixed geos - handled separately)
+
+    ref_date_df.drop(["GeographicLevelId"], axis=1, inplace=True)
     ref_date_df.drop_duplicates(inplace=True)
     ref_date_df["RefYear"].fillna("0", inplace=True)  # to prevent possible conversion error
     ref_date_df["RefYear"] = ref_date_df["RefYear"].astype("int16")
-    if min_ref_year:
+    if min_ref_year and (int(prod_id) not in mixed_geo_justice_pids):  # keep all rows for justice mixed geo prods
         ind_rows = ref_date_df[ref_date_df["RefYear"] < min_ref_year].index  # row index nums to delete
         dim_df = ref_date_df.drop(ind_rows)
     else:
@@ -531,15 +543,17 @@ def check_null_geography_reference(df):
     return df_null_gr
 
 
-def copy_data_frames_for_date_range(df_to_copy, ref_date_list, min_ref_year):
+def copy_data_frames_for_date_range(df_to_copy, ref_date_list, min_ref_year, product_id, mixed_geo_justice_pids):
     # When passed a dataframe (df_to_copy) and a list of reference dates (ref_date_list), build a copy of the dataframe
     # for each reference and add it to a list. The list is then combined into one big dataframe and returned in ref_df.
-    # If min_ref_year is present, only include dates after the first of that year.
+    # If min_ref_year is present, only include dates after the first of that year (unless it is a justice product
+    # (subject code 35) - reference years are handled as a special case for these tables)
     df_list = []
     for num, ref_date in enumerate(ref_date_list):
         tmp_df = df_to_copy.copy()
         tmp_year = str(ref_date)[:4]
-        if (min_ref_year and int(tmp_year) >= min_ref_year) or min_ref_year is False:
+        if (min_ref_year and int(tmp_year) >= min_ref_year) or min_ref_year is False or \
+                (int(product_id) in mixed_geo_justice_pids):
             tmp_df["RefYear"] = tmp_year
             tmp_df["ReferencePeriod"] = ref_date.strftime("%Y-%m-%d")
             df_list.append(tmp_df)
@@ -568,8 +582,7 @@ def fix_dguid(vintage, orig_dguid, prod_id):
     # Make any necessary corrections to the DGUID.
     # Format: VVVVTSSSSGGGGGGGGGGGG (V-vintage(4), T-type(1), S-schema(4), G-GUID(1-12) - 10-21 characters total
     new_dguid = str(orig_dguid)
-    subject_code = str(prod_id)[:2]
-    if subject_code == "35" and not (new_dguid == "<NA>"):  # special handling of justice tables (subj code 35)
+    if h.get_subject_code_from_product_id(prod_id) == "35" and not (new_dguid == "<NA>"):  # for justice tables (35)
         if len(new_dguid) < 10:  # If DGUID is too short, add the missing vintage and geo level to police district
             dguid_year = "2016" if int(vintage) < 2016 else str(vintage)  # 1998-2015 uses 2016 geographies
             new_dguid = dguid_year + "A0025" + orig_dguid
@@ -633,9 +646,10 @@ def set_uom_format(uom_id, lang, chart_type_id):
     return format_str
 
 
-def setup_chunk_columns(cdf, prod_id_str, rel_date, min_ref_year):
+def setup_chunk_columns(cdf, prod_id_str, rel_date, min_ref_year, mixed_geo_justice_pids):
     # set up the columns in a dataframe chunk of data from the csv file (cdf) for the specified product (prod_id_str)
-    # and release date (rel_date). If min_ref_year is included, exclude any rows with older dates.
+    # and release date (rel_date). If min_ref_year is included and this is not a mixed geo justice table,
+    # exclude any rows with older dates.
     chunk_df = cdf
     chunk_df["IndicatorCode"] = build_indicator_code(chunk_df["COORDINATE"], chunk_df["REF_DATE"], prod_id_str)
     chunk_df.drop(["COORDINATE"], axis=1, inplace=True)  # not nec. after IndicatorCode
@@ -649,7 +663,7 @@ def setup_chunk_columns(cdf, prod_id_str, rel_date, min_ref_year):
     chunk_df["ReferencePeriod"] = chunk_df["ReferencePeriod"].astype("datetime64[ns]")
     chunk_df["Vector"] = chunk_df["Vector"].str.replace("v", "").astype("int32")
     chunk_df["GeographicLevelId"] = chunk_df["DGUID"].str[4:9]  # extract geo level id
-    if min_ref_year:
+    if min_ref_year and (int(prod_id_str) not in mixed_geo_justice_pids):
         chunk_df["IntYear"] = chunk_df["RefYear"].astype("int16")  # temp column for comparison
         ind_rows = chunk_df[chunk_df["IntYear"] < min_ref_year].index  # row index nums to delete
         chunk_df.drop(ind_rows, inplace=True)

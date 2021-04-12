@@ -55,6 +55,12 @@ def convert_ref_year_to_date(ref_per):
     return retval
 
 
+def create_dummy_subject_code_suffix(subj_code):
+    # need variable length dummy subject code - workaround for int overflow on gis.IndicatorTheme-->IndicatorThemeId
+    retval = "99" if len(str(subj_code)) > 4 else "9999"
+    return retval
+
+
 def create_id_series(df, start_id):
     # returns a series of ids for a dataframe starting from start_id
     return pd.RangeIndex(start=start_id, stop=(start_id + df.shape[0]))
@@ -113,6 +119,11 @@ def get_partitioned_string(search_str, delim):
     str_tup = search_str.partition(delim)  # tuple ex. ("Crime and justice", "/" , "Crimes and offences/Homicides")
     retval = str_tup[2] if str_tup[2] != "" else search_str  # if no match on delim, send back original str
     return retval
+
+
+def get_subject_code_from_product_id(product_id):
+    # return first 2 digits of product id as subject code (ex. "35100002" --> "35")
+    return str(str(product_id)[:2])
 
 
 def get_subject_desc_from_code_set(subject_code, subject_codeset, lang):

@@ -40,7 +40,8 @@ class argParser(object):
                                       "must have the same dimension/member structure.")
         self.parser.add_argument("--minrefyear", type=int, metavar="YYYY",
                                  help="Earliest reference date to process from data file. Example: --minrefyear 2017 "
-                                      "will only add data with a reference date >= 2017-01-01.")
+                                      "will only add data with a reference date >= 2017-01-01. Note: this argument will"
+                                      " be ignored for justice tables (subject code 35) that have mixed geographies.")
 
         self.args = self.parser.parse_args()
 
