@@ -140,6 +140,18 @@ def build_dimension_values_df_subset(dvdf):
     return df
 
 
+def build_geographic_level_chunk_df(cdf, prod_id, mixed_geo_justice_pids):
+    # build df of geographic levels for the data chunk currently being processed (cdf).
+    geo_chunk = cdf.loc[:, ["RefYear", "GeographicLevelId", "IndicatorCode"]]
+    if int(prod_id) in mixed_geo_justice_pids:
+        # Justice products with mixed geos: remove rows < 2017 if geolevel is not in national, prov, regional level
+        geo_chunk.drop(geo_chunk[(geo_chunk["RefYear"].astype("int16") < 2017) &
+                                 (~geo_chunk["GeographicLevelId"].isin(["A0000", "A0001", "A0002"]))].index,
+                       inplace=True)
+    geo_chunk.drop(["RefYear"], axis=1, inplace=True)
+    return geo_chunk
+
+
 def build_geographic_level_for_indicator_df(gldf, idf, existing_gli_df, is_sibling):
     # build the data frame for GeographicLevelForIndicator based on dataframe geographic levels abnd indicator codes
     # (gldf) and df of Indicator codes and Ids that were just inserted to the db (idf). Exclude any rows that
@@ -415,16 +427,20 @@ def build_indicator_theme_df(prod_md, indicator_theme_id, sc_row_count, scs_row_
     return itdf
 
 
-def build_indicator_values_df(edf, gdf, ndf, next_id, prod_id, mixed_geo_justice_pids):
+def build_indicator_values_df(edf, gdf, ndf, next_id, prod_id, mixed_geo_justice_pids, is_sibling):
     # build the data frame for IndicatorValues based on dataframe of english csv file (edf),
     # GeographyReference ids (gdf), and NullReason ids (ndf). Populate indicator value ids starting from next_id.
-    # mixed_geo_justice_pids indicates justice tables that have special date handling.
+    # mixed_geo_justice_pids/is_sibling indicate justice tables that have special date handling.
     # also collect and return unique GeographicLevelIDs
 
-    # Justice products with mixed geos: remove rows < 2017 if geolevel is not in national, provincial, regional level
+    # Justice products with mixed geos
     if int(prod_id) in mixed_geo_justice_pids:
+        # remove rows < 2017 if geolevel is not in national, provincial, regional level
         edf.drop(edf[(edf["RefYear"].astype("int16") < 2017) &
                      (~edf["GeographicLevelId"].isin(["A0000", "A0001", "A0002"]))].index, inplace=True)
+        # for sibling tables with mixed geos, remove these same geolevels b/c they already exist in the master
+        if is_sibling:
+            edf.drop(edf[edf["GeographicLevelId"].isin(["A0000", "A0001", "A0002"])].index, inplace=True)
 
     df_iv = edf.loc[:, ["DGUID", "IndicatorCode", "STATUS", "VALUE"]]  # subset of full en dataset
     df_iv["IndicatorValueId"] = h.create_id_series(edf, next_id)  # populate IDs

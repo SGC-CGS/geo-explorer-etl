@@ -204,14 +204,14 @@ if __name__ == "__main__":
                                                                           functional_pid_str, mixed_geo_justice_pids))
 
                         # keep track of the geographic level for each indicator
-                        geo_chunk = chunk_data.loc[:, ["GeographicLevelId", "IndicatorCode"]]
-                        geo_levels.append(geo_chunk)
+                        geo_levels.append(dfh.build_geographic_level_chunk_df(chunk_data, functional_pid_str,
+                                                                              mixed_geo_justice_pids))
 
                         # gis.IndicatorValues
                         next_ind_val_id = db.get_last_table_id("IndicatorValueId", "IndicatorValues", "gis") + 1  # IDs
                         df_ind_val = dfh.build_indicator_values_df(chunk_data, df_geo_ref, df_ind_null,
                                                                    next_ind_val_id, functional_pid_str,
-                                                                   mixed_geo_justice_pids)
+                                                                   mixed_geo_justice_pids, is_sibling)
                         iv_result = db.insert_dataframe_rows(df_ind_val, "IndicatorValues", "gis")
                         df_ind_val.drop(["VALUE", "NullReasonId"], axis=1, inplace=True)  # save for next insert
 
