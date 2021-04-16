@@ -6,4 +6,4 @@
 *.iml
 *.txt
 /config.py
-/.idea
+/.idea 
