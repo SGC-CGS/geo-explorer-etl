@@ -652,14 +652,18 @@ def set_uom_format(uom_id, lang, chart_type_id):
         loc_code = "fr-CA"
 
     # default
-    format_str = "Format(iv.value, 'N', '" + loc_code + "')"
-    if uom_id == 223 or uom_id == 249 or (uom_id == 239 and chart_type_id == 1):
-        format_str = "Format(iv.value, 'N0', '" + loc_code + "')"
-    elif uom_id == 81:
-        format_str = "Format(iv.value, 'C0', '" + loc_code + "')"
-    elif (uom_id == 239 and chart_type_id == 2) or (uom_id == 279):
-        format_str = "Format(iv.value/100, 'P1', '" + loc_code + "')"
+    format_str = "Format(iv.value, 'N', '" + loc_code + "')"  # Simplified from original version to avoid rounding
     return format_str
+
+    # Original version - requested to keep this in case we want to restore rounding.
+    # format_str = "Format(iv.value, 'N', '" + loc_code + "')"
+    # if uom_id == 223 or uom_id == 249 or (uom_id == 239 and chart_type_id == 1):
+    #     format_str = "Format(iv.value, 'N0', '" + loc_code + "')"
+    # elif uom_id == 81:
+    #     format_str = "Format(iv.value, 'C0', '" + loc_code + "')"
+    # elif (uom_id == 239 and chart_type_id == 2) or (uom_id == 279):
+    #     format_str = "Format(iv.value/100, 'P1', '" + loc_code + "')"
+    # return format_str
 
 
 def setup_chunk_columns(cdf, prod_id_str, rel_date, min_ref_year, mixed_geo_justice_pids):
