@@ -598,7 +598,7 @@ def fix_dguid(vintage, orig_dguid, prod_id):
     # Make any necessary corrections to the DGUID.
     # Format: VVVVTSSSSGGGGGGGGGGGG (V-vintage(4), T-type(1), S-schema(4), G-GUID(1-12) - 10-21 characters total
     new_dguid = str(orig_dguid)
-    if h.get_subject_code_from_product_id(prod_id) == "35" and not (new_dguid == "<NA>"):  # for justice tables (35)
+    if h.get_subject_code_from_product_id(prod_id) == "35" and not (new_dguid == "<NA>"):  # justice tables (35)
         if len(new_dguid) < 10:  # If DGUID is too short, add the missing vintage and geo level to police district
             dguid_year = "2016" if int(vintage) < 2016 else str(vintage)  # 1998-2015 uses 2016 geographies
             new_dguid = dguid_year + "A0025" + orig_dguid
@@ -613,6 +613,12 @@ def fix_dguid(vintage, orig_dguid, prod_id):
         # fixes additional individual DGUID errors that need to be corrected *after* vintage correction
         new_dguid = new_dguid.replace("2011S0503522", "2011S0504522")  # Belleville was a CA <= 2011
         new_dguid = new_dguid.replace("2011S0503810", "2011S0504810")  # Lethbridge was a CA <= 2011
+
+    elif h.get_subject_code_from_product_id(prod_id) == "32" and not (new_dguid == "<NA>"):  # agriculture tables (32)
+        new_dguid = new_dguid.replace("A0002", "Z8000")  # Prov/Territory-->Province inside Agricultural Ecumene
+        new_dguid = new_dguid.replace("A0003", "Z8002")  # CD-->Census Division inside Agri. Ecumene
+        new_dguid = new_dguid.replace("S0501", "Z8001")  # Census agricultural region-->CAR inside Agri. Ecumene
+        new_dguid = new_dguid.replace("S0502", "Z8003")  # Census consolidated subdivision-->CCS inside Agri. Ecumene
 
     return new_dguid
 
