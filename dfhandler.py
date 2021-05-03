@@ -15,9 +15,9 @@ log.addHandler(logging.NullHandler())
 def build_column_and_type_dict(dimensions):
     # set up the dicionary of columns and data types for pandas df, then add columns listed in dimensions as str types
     # Note: All strings as object type by default. Categories are more efficient for string fields if there are < 50%
-    # unique values and no string operations are required.
+    # unique values and no string operations are required. VALUE is loaded as object to preserve original decimal value.
     cols = {"REF_DATE": "string", "DGUID": "string", "UOM": "category", "UOM_ID": "int16", "VECTOR": "string",
-            "COORDINATE": "string", "STATUS": "category", "SYMBOL": "string", "VALUE": "float64"}
+            "COORDINATE": "string", "STATUS": "category", "SYMBOL": "string", "VALUE": "object"}
     for dim in dimensions:
         cols[dim] = "string"
     return cols
@@ -338,13 +338,7 @@ def build_indicator_metadata_df(idf, prod_defaults, dkdf, existing_md_df):
     df_im["ColorTo"].fillna(prod_defaults["color_to"], inplace=True)
     df_im["ColorFrom"].fillna(prod_defaults["color_from"], inplace=True)
 
-    # uom formats are inserted into the primary query
-    df_im["en_format"] = df_im.apply(lambda x: set_uom_format(x["DataFormatId"], "en", x["PrimaryChartTypeId"]), axis=1)
-    df_im["fr_format"] = df_im.apply(lambda x: set_uom_format(x["DataFormatId"], "fr", x["PrimaryChartTypeId"]), axis=1)
-
-    df_im["PrimaryQuery"] = "SELECT iv.value AS Value, CASE WHEN iv.value IS NULL THEN nr.symbol ELSE " + \
-                            df_im["en_format"] + " END AS FormattedValue_EN,  CASE WHEN iv.value IS NULL THEN " \
-                            "nr.symbol ELSE " + df_im["fr_format"] + " END AS FormattedValue_FR, " \
+    df_im["PrimaryQuery"] = "SELECT iv.value AS Value, FormattedValue_EN, FormattedValue_FR, " \
                             "grfi.GeographyReferenceId, g.DisplayNameShort_EN, g.DisplayNameShort_FR, " \
                             "g.DisplayNameLong_EN, g.DisplayNameLong_FR, g.ProvTerrName_EN, g.ProvTerrName_FR, " \
                             "g.Shape, i.IndicatorName_EN, i.IndicatorName_FR, i.IndicatorId, i.IndicatorDisplay_EN, " \
@@ -453,12 +447,17 @@ def build_indicator_values_df(edf, gdf, ndf, next_id, prod_id, mixed_geo_justice
     df_iv = pd.merge(df_iv, ndf, left_on="STATUS", right_on="Symbol", how="left")  # join to NullReasonId for Symbol
     df_iv.drop(["STATUS", "Symbol"], axis=1, inplace=True)
 
+    df_iv["FormattedValue_EN"] = df_iv.apply(lambda x: h.format_number_for_locale(x["VALUE"], "en_CA.UTF-8"), axis=1)
+    df_iv["FormattedValue_FR"] = df_iv.apply(lambda x: h.format_number_for_locale(x["VALUE"], "fr_CA.UTF-8"), axis=1)
+
     # set datatypes for db
     df_iv = df_iv.fillna(np.nan).replace([np.nan], [None])  # workaround to set nan/na=None (prevents sql error 22003)
     df_iv["IndicatorValueCode"] = df_iv["IndicatorValueCode"].str[:100]
+    df_iv["VALUE"] = df_iv["VALUE"].astype("float64")
 
     # Keep only the columns needed for insert
-    df_iv = df_iv.loc[:, ["IndicatorValueId", "VALUE", "NullReasonId", "IndicatorValueCode"]]
+    df_iv = df_iv.loc[:, ["IndicatorValueId", "VALUE", "NullReasonId", "IndicatorValueCode", "FormattedValue_EN",
+                          "FormattedValue_FR"]]
     return df_iv
 
 
@@ -510,23 +509,17 @@ def build_related_charts_df(idf, prod_defaults, existing_md_df):
     df_rc["FieldAlias_EN"] = df_rc["UOM_EN"]
     df_rc["FieldAlias_FR"] = df_rc["UOM_FR"]
 
-    # uom formats are inserted into the query field
-    df_rc["en_format"] = df_rc.apply(lambda x: set_uom_format(x["DataFormatId"], "en", x["ChartTypeId"]), axis=1)
-    df_rc["fr_format"] = df_rc.apply(lambda x: set_uom_format(x["DataFormatId"], "fr", x["ChartTypeId"]), axis=1)
-
     # build a generic indicator code for each of the indicators. Can group by these later.
     df_rc["GenericIndicatorCode"] = df_rc.apply(lambda x: set_generic_indicator_code(x["IndicatorCode"]), axis=1)
     df_rc["RelatedIndicatorIDs"] = df_rc.apply(lambda x: get_related_indicator_list(x["GenericIndicatorCode"], df_rc,
                                                                                     x["RelatedChartId"]), axis=1)
 
-    df_rc["Query"] = "SELECT iv.value AS Value, CASE WHEN iv.value IS NULL THEN nr.symbol ELSE " + df_rc["en_format"] \
-                     + " END AS FormattedValue_EN, CASE WHEN iv.value IS NULL THEN nr.symbol ELSE " + \
-                     df_rc["fr_format"] + " END AS FormattedValue_FR, i.IndicatorName_EN, i.IndicatorName_FR, " \
-                     "nr.Description_EN AS NullDescription_EN, nr.Description_FR AS NullDescription_FR FROM " \
-                     "gis.IndicatorValues AS iv left outer join gis.IndicatorNullReason AS nr on iv.NullReasonId = " \
-                     "nr.NullReasonId INNER JOIN gis.GeographyReferenceForIndicator AS gfri ON iv.indicatorvalueid = " \
-                     "gfri.indicatorvalueid INNER JOIN gis.indicator AS i ON i.indicatorid = gfri.indicatorid WHERE " \
-                     "gfri.indicatorid IN (" + df_rc["RelatedIndicatorIDs"] + ")"
+    df_rc["Query"] = "SELECT iv.value AS Value, FormattedValue_EN, FormattedValue_FR, i.IndicatorName_EN, " \
+                     "i.IndicatorName_FR, nr.Description_EN AS NullDescription_EN, nr.Description_FR AS " \
+                     "NullDescription_FR FROM gis.IndicatorValues AS iv left outer join gis.IndicatorNullReason " \
+                     "AS nr on iv.NullReasonId = nr.NullReasonId INNER JOIN gis.GeographyReferenceForIndicator " \
+                     "AS gfri ON iv.indicatorvalueid = gfri.indicatorvalueid INNER JOIN gis.indicator AS i ON " \
+                     "i.indicatorid = gfri.indicatorid WHERE gfri.indicatorid IN (" + df_rc["RelatedIndicatorIDs"] + ")"
 
     # set datatypes/lengths for db
     df_rc["ChartTitle_EN"] = df_rc["ChartTitle_EN"].astype("string").str[:150]
@@ -642,28 +635,6 @@ def set_generic_indicator_code(ind_code):
         generic_ind_code = ".".join(split_ind_code[0:len(split_ind_code) - 3]) \
                            + ".%." + ".".join(split_ind_code[-2:])  # stitch code back together with wildcard inserted
     return generic_ind_code
-
-
-def set_uom_format(uom_id, lang, chart_type_id):
-    # Returns format string for specified uom_id, language (lang), chart_type_id (1-bar, 2-pie, 3-line)
-    # These formats were selected based on what already existed in the database as built by the powerBI process.
-    loc_code = "en-US"
-    if lang == "fr":
-        loc_code = "fr-CA"
-
-    # default
-    format_str = "Format(iv.value, 'N', '" + loc_code + "')"  # Simplified from original version to avoid rounding
-    return format_str
-
-    # Original version - requested to keep this in case we want to restore rounding.
-    # format_str = "Format(iv.value, 'N', '" + loc_code + "')"
-    # if uom_id == 223 or uom_id == 249 or (uom_id == 239 and chart_type_id == 1):
-    #     format_str = "Format(iv.value, 'N0', '" + loc_code + "')"
-    # elif uom_id == 81:
-    #     format_str = "Format(iv.value, 'C0', '" + loc_code + "')"
-    # elif (uom_id == 239 and chart_type_id == 2) or (uom_id == 279):
-    #     format_str = "Format(iv.value/100, 'P1', '" + loc_code + "')"
-    # return format_str
 
 
 def setup_chunk_columns(cdf, prod_id_str, rel_date, min_ref_year, mixed_geo_justice_pids):

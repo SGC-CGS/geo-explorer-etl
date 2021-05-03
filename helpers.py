@@ -1,6 +1,8 @@
 # helper functions
 import datetime as dt
+from decimal import Decimal
 import gc  # for garbage collection
+import locale
 import logging
 from logging.handlers import RotatingFileHandler
 import pandas as pd
@@ -99,6 +101,22 @@ def fix_ref_year(year_str):
         retval = 1900  # default - to help finding afterward
 
     return retval
+
+
+def format_number_for_locale(num, locale_str):
+    # Format number (num) for locale (locale_str) and preserve original decimal places. Returns formatted string.
+    # If using with pandas, column should be loaded as object (not float) to preserve decimals from orignal data
+
+    if num and num is not None:
+        orig_locale = locale.getlocale()  # remember original setting so we can change it back afterward
+        locale.setlocale(locale.LC_NUMERIC, locale_str)
+        format_num = '{0:n}'.format(Decimal(str(num)))  # Decimal/str to preserve decimals, '{0:n}'.format for locale
+        locale.setlocale(locale.LC_NUMERIC, orig_locale)
+        format_num = "" if format_num == "NaN" else format_num  # if operation resulted in NaN, clear value
+    else:
+        format_num = ""
+
+    return format_num
 
 
 def get_nth_item_from_string_list(item_list, delim, n=None):

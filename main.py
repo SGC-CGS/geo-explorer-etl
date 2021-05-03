@@ -213,7 +213,8 @@ if __name__ == "__main__":
                                                                    next_ind_val_id, functional_pid_str,
                                                                    mixed_geo_justice_pids, is_sibling)
                         iv_result = db.insert_dataframe_rows(df_ind_val, "IndicatorValues", "gis")
-                        df_ind_val.drop(["VALUE", "NullReasonId"], axis=1, inplace=True)  # save for next insert
+                        df_ind_val.drop(["VALUE", "NullReasonId", "FormattedValue_EN", "FormattedValue_FR"], axis=1,
+                                        inplace=True)  # save for next insert
 
                         # gis.GeographyReferenceForIndicator - returns data for insert (gri[0]) and warnings (gri[1])
                         gri = dfh.build_geography_reference_for_indicator_df(chunk_data, df_ind, df_geo_ref, df_ind_val)
