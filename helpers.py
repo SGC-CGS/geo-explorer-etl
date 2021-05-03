@@ -109,9 +109,9 @@ def format_number_for_locale(num, locale_str):
 
     if num and num is not None:
         orig_locale = locale.getlocale()  # remember original setting so we can change it back afterward
-        locale.setlocale(locale.LC_NUMERIC, locale_str)
+        locale.setlocale(locale.LC_ALL, locale_str)
         format_num = '{0:n}'.format(Decimal(str(num)))  # Decimal/str to preserve decimals, '{0:n}'.format for locale
-        locale.setlocale(locale.LC_NUMERIC, orig_locale)
+        locale.setlocale(locale.LC_ALL, orig_locale)
         format_num = "" if format_num == "NaN" else format_num  # if operation resulted in NaN, clear value
     else:
         format_num = ""

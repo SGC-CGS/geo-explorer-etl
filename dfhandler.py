@@ -447,8 +447,8 @@ def build_indicator_values_df(edf, gdf, ndf, next_id, prod_id, mixed_geo_justice
     df_iv = pd.merge(df_iv, ndf, left_on="STATUS", right_on="Symbol", how="left")  # join to NullReasonId for Symbol
     df_iv.drop(["STATUS", "Symbol"], axis=1, inplace=True)
 
-    df_iv["FormattedValue_EN"] = df_iv.apply(lambda x: h.format_number_for_locale(x["VALUE"], "en_CA.UTF-8"), axis=1)
-    df_iv["FormattedValue_FR"] = df_iv.apply(lambda x: h.format_number_for_locale(x["VALUE"], "fr_CA.UTF-8"), axis=1)
+    df_iv["FormattedValue_EN"] = df_iv.apply(lambda x: h.format_number_for_locale(x["VALUE"], "en_CA"), axis=1)
+    df_iv["FormattedValue_FR"] = df_iv.apply(lambda x: h.format_number_for_locale(x["VALUE"], "fr_CA"), axis=1)
 
     # set datatypes for db
     df_iv = df_iv.fillna(np.nan).replace([np.nan], [None])  # workaround to set nan/na=None (prevents sql error 22003)
