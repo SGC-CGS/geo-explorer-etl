@@ -448,13 +448,17 @@ def build_indicator_values_df(edf, gdf, ndf, next_id, prod_id, mixed_geo_justice
     df_iv.drop(["STATUS", "Symbol"], axis=1, inplace=True)
 
     # format for locale while preserving decimals from datapoints, restore original locale setting when done.
-    df_iv["Value_Dec"] = df_iv.apply(lambda x: h.format_number_preserve_decimals(x["VALUE"]), axis=1)  # temp column
-    orig_locale = h.get_locale()
-    h.set_locale("en_ca")
-    df_iv["FormattedValue_EN"] = df_iv.apply(lambda x: h.format_number_for_locale(x["Value_Dec"]), axis=1)
-    h.set_locale("fr_ca")
-    df_iv["FormattedValue_FR"] = df_iv.apply(lambda x: h.format_number_for_locale(x["Value_Dec"]), axis=1)
-    h.set_locale(orig_locale)
+    if df_iv.shape[0] > 0:
+        df_iv["Value_Dec"] = df_iv.apply(lambda x: h.format_number_preserve_decimals(x["VALUE"]), axis=1)  # temp column
+        orig_locale = h.get_locale()
+        h.set_locale("en_ca")
+        df_iv["FormattedValue_EN"] = df_iv.apply(lambda x: h.format_number_for_locale(x["Value_Dec"]), axis=1)
+        h.set_locale("fr_ca")
+        df_iv["FormattedValue_FR"] = df_iv.apply(lambda x: h.format_number_for_locale(x["Value_Dec"]), axis=1)
+        h.set_locale(orig_locale)
+    else:
+        df_iv["FormattedValue_EN"] = df_iv["VALUE"]  # work around to prevent error on empty chunk
+        df_iv["FormattedValue_FR"] = df_iv["VALUE"]
 
     # set datatypes for db
     df_iv = df_iv.fillna(np.nan).replace([np.nan], [None])  # workaround to set nan/na=None (prevents sql error 22003)
