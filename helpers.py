@@ -103,20 +103,24 @@ def fix_ref_year(year_str):
     return retval
 
 
-def format_number_for_locale(num, locale_str):
-    # Format number (num) for locale (locale_str) and preserve original decimal places. Returns formatted string.
+def format_number_preserve_decimals(num):
+    # convert number to decimal and preserve original decimal places
     # If using with pandas, column should be loaded as object (not float) to preserve decimals from orignal data
+    retval = Decimal(str(num)) if num and num is not None else num  # Decimal/str to preserve decimals
+    return retval
 
+
+def format_number_for_locale(num):
+    # Format number (num) for locale with appropriate decimal and thousand separators. Returns string.
+    format_num = ""
     if num and num is not None:
-        orig_locale = locale.getlocale()  # remember original setting so we can change it back afterward
-        locale.setlocale(locale.LC_ALL, locale_str)
-        format_num = '{0:n}'.format(Decimal(str(num)))  # Decimal/str to preserve decimals, '{0:n}'.format for locale
-        locale.setlocale(locale.LC_ALL, orig_locale)
+        format_num = '{0:n}'.format(num)  # n for locale
         format_num = "" if format_num == "NaN" else format_num  # if operation resulted in NaN, clear value
-    else:
-        format_num = ""
-
     return format_num
+
+
+def get_locale():
+    return locale.getlocale()
 
 
 def get_nth_item_from_string_list(item_list, delim, n=None):
@@ -183,6 +187,20 @@ def get_uom_desc_from_code_set(uom_code, uom_codeset, lang):
              for row in uom_codeset
              if row["memberUomCode"] == uom_code), None)
     return retval
+
+
+def locale_exists(locale_str):
+    # check if specified locale (locale_str) exists on this OS
+    locale_list = locale.locale_alias
+    retval = True if locale_str in locale_list else False
+    return retval
+
+
+def set_locale(locale_str):
+    # change locale setting to that specified in locale_str if it exists
+    if locale_exists(locale_str):
+        locale.setlocale(locale.LC_ALL, locale_str)
+    return
 
 
 def setup_logger(work_dir, log_name):
