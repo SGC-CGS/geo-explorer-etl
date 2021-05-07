@@ -106,14 +106,14 @@ def fix_ref_year(year_str):
 def format_number_preserve_decimals(num):
     # convert number to decimal and preserve original decimal places
     # If using with pandas, column should be loaded as object (not float) to preserve decimals from orignal data
-    retval = Decimal(str(num)) if num and num is not None else num  # Decimal/str to preserve decimals
+    retval = Decimal(str(num)) if num is not None else num  # Decimal/str to preserve decimals
     return retval
 
 
 def format_number_for_locale(num):
     # Format number (num) for locale with appropriate decimal and thousand separators. Returns string.
     format_num = ""
-    if num and num is not None:
+    if num is not None:
         format_num = '{0:n}'.format(num)  # n for locale
         format_num = "" if format_num == "NaN" else format_num  # if operation resulted in NaN, clear value
     return format_num
